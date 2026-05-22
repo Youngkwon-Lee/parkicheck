@@ -426,7 +426,7 @@
         <div class="metric-box"><div class="metric-val" id="resFreq">0</div><div class="metric-lbl">TAPS / SEC</div></div>
         <div class="metric-box"><div class="metric-val" id="resArrests">0</div><div class="metric-lbl">ARRESTS</div></div>
         <div class="metric-box"><div class="metric-val" id="resITI">--</div><div class="metric-lbl">ITI CV (%)</div></div>
-        <div class="metric-box"><div class="metric-val" id="resMaxAmp">--</div><div class="metric-lbl">MAX AMP</div></div>
+        <div class="metric-box"><div class="metric-val" id="resMaxAmp">--</div><div class="metric-lbl">MEAN AMP</div></div>
         <div class="metric-box"><div class="metric-val" id="resFatig">--</div><div class="metric-lbl">FATIG %</div></div>
       </div>
       <div id="ampChartWrap">
@@ -636,7 +636,7 @@ let appMode = 'free';
 // UPDRS live test state
 let testState = 'idle';
 let graphPulse = 0; // pulse ring decay on latest graph point
-const testData = { taps:[], startTime:0, arrests:0, lastTapT:0, currentMaxDist:0 };
+const testData = { taps:[], startTime:0, arrests:0, lastTapT:0, currentMaxDist:0, handSizeRef:0 };
 
 // Video analysis
 let pendingResolve = null;   // resolves after each hands.onResults in video mode
@@ -890,19 +890,26 @@ function scoreUPDRS(taps, arrests, durationSec = 10) {
   let iti_cv = 0;
   if(n>=3){const ivs=taps.slice(1).map((t,i)=>t.t-taps[i].t),mean=ivs.reduce((a,b)=>a+b,0)/ivs.length,sd=Math.sqrt(ivs.map(x=>(x-mean)**2).reduce((a,b)=>a+b,0)/ivs.length);iti_cv=mean>0?(sd/mean)*100:0;}
   const maxAmp = n>0 ? Math.max(...taps.map(t=>t.amplitude)) : 0;
+  // Trimmed mean: drop top/bottom 10% outliers for representative amplitude
+  const sorted = n>0 ? [...taps].sort((a,b)=>a.amplitude-b.amplitude) : [];
+  const trim = Math.max(1, Math.floor(n*0.1));
+  const trimmed = n>=4 ? sorted.slice(trim, n-trim) : sorted;
+  const meanAmp = trimmed.length > 0 ? trimmed.reduce((a,t)=>a+t.amplitude,0)/trimmed.length : 0;
+
   let fatig = 0;
   if(n>=6){const avg=arr=>arr.reduce((a,t)=>a+t.amplitude,0)/arr.length,half=Math.floor(n/2);fatig=Math.max(0,(1-avg(taps.slice(-half))/avg(taps.slice(0,half)))*100);}
   const factors = {
     freq  : clamp(freq>=5.5?0:freq>=4.0?1:freq>=2.5?2:freq>=1.0?3:4),
     arrest: clamp(arrests===0?0:arrests<=2?1:arrests<=5?2:arrests<=8?3:4),
     rhythm: clamp(n>=3?(iti_cv<15?0:iti_cv<30?1:iti_cv<50?2:iti_cv<70?3:4):0),
-    amp   : clamp(n>0?(maxAmp>=0.13?0:maxAmp>=0.09?1:maxAmp>=0.06?2:maxAmp>=0.03?3:4):0),
+    // Normalized amplitude (ratio to hand size): 0.45=normal full open, 0.08=barely moving
+    amp   : clamp(n>0?(meanAmp>=0.45?0:meanAmp>=0.30?1:meanAmp>=0.18?2:meanAmp>=0.08?3:4):0),
     fatig : clamp(n>=6?(fatig<10?0:fatig<25?1:fatig<45?2:fatig<65?3:4):0),
   };
   const raw = Object.entries(FACTOR_WEIGHTS).reduce((s,[k,w])=>s+factors[k]*w,0);
   const score = clamp(Math.round(raw));
   const confidence = n>=20?'HIGH':n>=10?'MEDIUM':'LOW';
-  return {score, raw, factors, freq, arrests, iti_cv, fatig, maxAmp, n, confidence};
+  return {score, raw, factors, freq, arrests, iti_cv, fatig, maxAmp, meanAmp, n, confidence};
 }
 
 // ═══════════════════════════════════════════
@@ -924,7 +931,7 @@ function showResults(durationSec = 10, title = 'UPDRS 3.4 — FINGER TAPPING') {
   el('resFreq').textContent    = freq.toFixed(1);
   el('resArrests').textContent = arrests;
   el('resITI').textContent     = n>=3 ? `${iti_cv.toFixed(0)}%` : '--';
-  el('resMaxAmp').textContent  = n>0 ? `${(maxAmp*100).toFixed(0)}` : '--';
+  el('resMaxAmp').textContent  = n>0 ? `${(meanAmp*100).toFixed(0)}` : '--';
 
   const fc = fatig<15?'#00ffcc':fatig<35?'#ffff00':'#ff4444';
   el('resFatig').textContent = n>=6 ? `${fatig.toFixed(0)}%` : '--';
@@ -992,7 +999,10 @@ function triggerTap(x, y, fi) {
     const ts = appMode==='video' ? (videoEl.currentTime*1000) : now;
     const elapsed = ts - testData.lastTapT;
     if(testData.taps.length>0 && elapsed>ARREST_THRESHOLD) testData.arrests++;
-    testData.taps.push({t:ts, amplitude:testData.currentMaxDist});
+    const normAmp = testData.handSizeRef > 0
+      ? testData.currentMaxDist / testData.handSizeRef
+      : testData.currentMaxDist;
+    testData.taps.push({t:ts, amplitude: normAmp});
     testData.currentMaxDist = 0;
     testData.lastTapT = ts;
     if(testState==='running') { document.getElementById('testTapCount').textContent = testData.taps.length; graphPulse = 1; }
@@ -1070,7 +1080,7 @@ function startCountdown() {
 }
 function startTest() {
   testState='running';
-  Object.assign(testData,{taps:[],arrests:0,startTime:Date.now(),lastTapT:Date.now(),currentMaxDist:0});
+  Object.assign(testData,{taps:[],arrests:0,startTime:Date.now(),lastTapT:Date.now(),currentMaxDist:0,handSizeRef:0});
   document.getElementById('testHud').classList.add('visible');
   document.getElementById('testTapCount').textContent='0';
   setTimeout(endTest, TEST_DURATION);
@@ -1235,6 +1245,12 @@ function detectTaps(landmarks, handIdx) {
   const thumb=landmarks[THUMB_TIP], now=Date.now();
   const active=[false,false,false,false];
   getTrail(handIdx,'t').add((1-thumb.x)*W, thumb.y*H);
+
+  // Track hand size (wrist→middle MCP) for amplitude normalization
+  const wrist=landmarks[0], mcp9=landmarks[9];
+  const hs=Math.sqrt((wrist.x-mcp9.x)**2+(wrist.y-mcp9.y)**2);
+  if(testState==='running'&&hs>0.05)
+    testData.handSizeRef = testData.handSizeRef ? testData.handSizeRef*0.9+hs*0.1 : hs;
 
   FINGER_TIPS.forEach((tipIdx,fi)=>{
     const tip=landmarks[tipIdx];
