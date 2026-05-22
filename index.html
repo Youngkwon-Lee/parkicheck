@@ -1,0 +1,1392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <title>ParkiCheck — Parkinson's Finger Tap Test</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+  <style>
+    :root {
+      --bg: #03030a; --glass: rgba(12,15,28,0.55);
+      --border: rgba(255,255,255,0.1); --accent: #00ffcc;
+    }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { background:var(--bg); color:#fff; font-family:'Courier New',monospace; overflow:hidden; }
+    #container { position:relative; width:100vw; height:100vh; }
+
+    video { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; transform:scaleX(-1); filter:brightness(0.6) contrast(1.1); }
+    canvas { position:absolute; inset:0; width:100%; height:100%; }
+
+    .panel { background:var(--glass); backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px); border:1px solid var(--border); border-radius:12px; padding:12px 18px; }
+
+    /* ── FREE PLAY HUD ── */
+    #hud { position:absolute; top:20px; left:20px; z-index:10; pointer-events:none; display:flex; flex-direction:column; gap:10px; transition:opacity 0.4s; }
+    .stat { display:flex; justify-content:space-between; gap:16px; font-size:0.8rem; letter-spacing:1px; color:rgba(255,255,255,0.6); margin-bottom:8px; }
+    .stat:last-child { margin-bottom:0; }
+    .stat .val { color:var(--accent); font-weight:bold; font-size:0.9rem; }
+    #comboPanel { min-height:52px; display:flex; align-items:center; justify-content:center; }
+    #comboDisplay { font-size:1.8rem; font-weight:bold; letter-spacing:2px; text-align:center; transition:color 0.2s; }
+
+    /* ── Mode Switch ── */
+    #modeSwitch { position:absolute; top:20px; right:20px; z-index:20; display:flex; gap:2px; padding:4px; background:var(--glass); backdrop-filter:blur(18px); border:1px solid var(--border); border-radius:30px; }
+    .mode-btn { padding:8px 16px; border:none; border-radius:24px; cursor:pointer; font-family:'Courier New',monospace; font-size:0.68rem; letter-spacing:1px; font-weight:bold; text-transform:uppercase; background:transparent; color:rgba(255,255,255,0.4); transition:all 0.25s; }
+    .mode-btn.active { background:rgba(255,255,255,0.12); color:#fff; }
+
+    /* ── Legend ── */
+    #legend { position:absolute; bottom:20px; left:50%; transform:translateX(-50%); z-index:10; display:flex; gap:8px; padding:8px 20px; background:var(--glass); backdrop-filter:blur(18px); border:1px solid var(--border); border-radius:30px; pointer-events:none; transition:opacity 0.4s; }
+    .fi { display:flex; align-items:center; gap:6px; font-size:0.72rem; color:rgba(255,255,255,0.6); letter-spacing:1px; }
+    .dot { width:9px; height:9px; border-radius:50%; }
+
+    /* ── Shared overlay card ── */
+    .ov-center { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none; transition:opacity 0.4s; }
+    .ov-card { background:rgba(8,10,22,0.94); border:1px solid var(--border); border-radius:20px; padding:36px 44px; max-width:420px; width:90%; text-align:center; pointer-events:auto; }
+    .ov-h2 { font-size:1.1rem; letter-spacing:4px; color:var(--accent); margin-bottom:4px; }
+    .ov-sub { font-size:0.7rem; letter-spacing:2px; color:rgba(255,255,255,0.3); margin-bottom:18px; }
+    .ov-p { font-size:0.82rem; color:rgba(255,255,255,0.55); line-height:1.8; margin-bottom:26px; }
+    .btn-primary { padding:12px 34px; background:linear-gradient(135deg,#00ffcc,#0055ff); border:none; color:#000; border-radius:24px; cursor:pointer; font-family:'Courier New',monospace; font-weight:bold; letter-spacing:2px; font-size:0.88rem; text-transform:uppercase; transition:transform 0.2s; }
+    .btn-primary:hover { transform:scale(1.05); }
+    .btn-ghost { background:rgba(255,255,255,0.08); color:rgba(255,255,255,0.6); border:1px solid var(--border); margin-left:10px; }
+    .btn-ghost:hover { background:rgba(255,255,255,0.14); }
+
+    /* ── UPDRS test ── */
+    #testHud { position:absolute; top:50%; right:28px; transform:translateY(-50%); z-index:10; display:flex; flex-direction:column; align-items:center; gap:10px; opacity:0; pointer-events:none; transition:opacity 0.4s; }
+    #testHud.visible { opacity:1; }
+    .timer-ring { position:relative; width:110px; height:110px; }
+    .timer-ring svg { transform:rotate(-90deg); }
+    .t-bg { fill:none; stroke:rgba(255,255,255,0.08); stroke-width:7; }
+    .t-fg { fill:none; stroke:var(--accent); stroke-width:7; stroke-linecap:round; transition:stroke-dashoffset 0.12s linear, stroke 0.3s; }
+    #timerText { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:1.7rem; font-weight:bold; color:var(--accent); transition:color 0.3s; }
+    #testTapCount { font-size:2.8rem; font-weight:bold; color:#fff; text-shadow:0 0 20px rgba(255,255,255,0.3); }
+    #testTapLabel { font-size:0.68rem; letter-spacing:2px; color:rgba(255,255,255,0.45); }
+
+    /* ── Countdown ── */
+    #countdown { position:absolute; inset:0; z-index:60; display:flex; align-items:center; justify-content:center; pointer-events:none; opacity:0; transition:opacity 0.15s; }
+    #countdown.visible { opacity:1; }
+    #countdownNum { font-size:22vw; font-weight:bold; line-height:1; text-shadow:0 0 80px currentColor; animation:cpulse 0.75s ease-out; }
+    @keyframes cpulse { from{transform:scale(1.5);opacity:0} to{transform:scale(1);opacity:1} }
+
+    /* ── VIDEO mode — drop zone ── */
+    #videoDropOverlay { z-index:50; background:rgba(0,0,0,0.5); }
+    .drop-zone {
+      border:2px dashed rgba(255,255,255,0.2); border-radius:20px; padding:48px 40px;
+      cursor:pointer; transition:border-color 0.2s, background 0.2s; width:100%;
+    }
+    .drop-zone:hover, .drop-zone.drag-over { border-color:var(--accent); background:rgba(0,255,204,0.04); }
+    .drop-icon { font-size:2.5rem; margin-bottom:14px; }
+    .drop-title { font-size:1.1rem; letter-spacing:4px; color:#fff; margin-bottom:8px; }
+    .drop-sub { font-size:0.78rem; color:rgba(255,255,255,0.4); margin-bottom:20px; }
+    .drop-hint { font-size:0.7rem; letter-spacing:1px; color:rgba(255,255,255,0.25); }
+
+    /* ── VIDEO mode — processing progress ── */
+    #videoProgressOverlay { z-index:55; background:rgba(0,0,0,0.7); backdrop-filter:blur(8px); }
+    .vp-card { background:rgba(8,10,22,0.96); border:1px solid var(--border); border-radius:18px; padding:32px 40px; min-width:340px; text-align:center; }
+    .vp-title { font-size:0.72rem; letter-spacing:4px; color:rgba(255,255,255,0.4); margin-bottom:10px; }
+    #vpFileName { font-size:0.85rem; color:var(--accent); margin-bottom:20px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:280px; }
+    .vp-bar-wrap { height:6px; background:rgba(255,255,255,0.08); border-radius:3px; margin-bottom:14px; overflow:hidden; }
+    #vpProgress { height:100%; background:linear-gradient(90deg,#00ffcc,#0055ff); border-radius:3px; width:0%; transition:width 0.15s; }
+    .vp-stats { display:flex; justify-content:space-between; font-size:0.75rem; color:rgba(255,255,255,0.5); }
+    #vpTaps { color:var(--accent); font-weight:bold; }
+
+    /* ── Results ── */
+    #resultsOverlay { position:absolute; inset:0; z-index:70; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.65); backdrop-filter:blur(10px); opacity:0; pointer-events:none; transition:opacity 0.5s; overflow-y:auto; }
+    #resultsOverlay.visible { opacity:1; pointer-events:auto; }
+    .results-card { background:rgba(6,8,18,0.96); border:1px solid var(--border); border-radius:22px; padding:30px 38px; min-width:360px; max-width:440px; width:92%; text-align:center; margin:20px auto; }
+    .results-card h2 { font-size:0.72rem; letter-spacing:4px; color:rgba(255,255,255,0.35); margin-bottom:16px; }
+    #updrsScore { font-size:5rem; font-weight:bold; line-height:1; margin-bottom:4px; transition:color 0.5s; }
+    #updrsLabel { font-size:0.75rem; letter-spacing:2px; color:rgba(255,255,255,0.4); margin-bottom:18px; }
+    .metrics-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:14px; }
+    .metric-box { background:rgba(255,255,255,0.04); border:1px solid var(--border); border-radius:9px; padding:10px; }
+    .metric-val { font-size:1.4rem; font-weight:bold; color:var(--accent); }
+    .metric-lbl { font-size:0.58rem; letter-spacing:1px; color:rgba(255,255,255,0.38); margin-top:2px; }
+    #ampChartWrap { margin-bottom:14px; padding:10px 14px 8px; background:rgba(255,255,255,0.03); border:1px solid var(--border); border-radius:9px; }
+    #ampChartLabel { font-size:0.58rem; letter-spacing:2px; color:rgba(255,255,255,0.3); margin-bottom:6px; }
+    #ampChart { display:flex; align-items:flex-end; gap:2px; height:48px; }
+    .amp-bar { flex:1; min-width:3px; border-radius:2px 2px 0 0; }
+    #fatigRow { display:flex; justify-content:space-between; align-items:center; margin-top:6px; }
+    #fatigLabel { font-size:0.58rem; letter-spacing:1px; color:rgba(255,255,255,0.3); }
+    #fatigVal { font-size:0.85rem; font-weight:bold; }
+    #factorBreakdown { margin-bottom:14px; padding:12px 14px; background:rgba(255,255,255,0.03); border:1px solid var(--border); border-radius:9px; text-align:left; }
+    .factor-title { font-size:0.58rem; letter-spacing:2px; color:rgba(255,255,255,0.3); margin-bottom:10px; text-align:center; }
+    .factor-row { display:grid; grid-template-columns:90px 1fr 34px; align-items:center; gap:7px; margin-bottom:7px; }
+    .factor-row:last-child { margin-bottom:0; }
+    .f-name { font-size:0.6rem; letter-spacing:1px; color:rgba(255,255,255,0.45); }
+    .f-bar-wrap { height:5px; background:rgba(255,255,255,0.07); border-radius:3px; overflow:hidden; }
+    .f-bar { height:100%; border-radius:3px; width:0%; transition:width 0.8s cubic-bezier(.16,1,.3,1); }
+    .f-score { font-size:0.68rem; font-weight:bold; text-align:right; }
+    #confidenceTag { display:inline-block; margin-bottom:12px; padding:3px 10px; border-radius:20px; font-size:0.62rem; letter-spacing:1px; border:1px solid; font-weight:bold; }
+    #updrsDesc { font-size:0.75rem; color:rgba(255,255,255,0.45); line-height:1.7; margin-bottom:18px; }
+
+    /* ── Start overlay ── */
+    #startOverlay { position:absolute; inset:0; z-index:100; background:rgba(0,0,0,0.92); backdrop-filter:blur(12px); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:22px; transition:opacity 0.6s ease; }
+    #startOverlay h1 { font-size:clamp(2rem,6vw,3.5rem); font-weight:300; letter-spacing:8px; background:linear-gradient(90deg,#00ffcc,#ff00ff,#ffff00,#00ffcc); background-size:300%; -webkit-background-clip:text; -webkit-text-fill-color:transparent; animation:shimmer 4s linear infinite; }
+    @keyframes shimmer { from{background-position:0%} to{background-position:300%} }
+    #startOverlay p { color:#555; font-size:0.88rem; text-align:center; max-width:280px; line-height:1.6; }
+
+    .hidden { opacity:0 !important; pointer-events:none !important; }
+    .hidden * { pointer-events:none !important; }
+
+    /* ── Landing ── */
+    #landingOverlay { position:absolute; inset:0; z-index:90; overflow-y:auto; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:48px 24px; transition:opacity 0.6s; }
+    #landingOverlay::before { content:''; position:fixed; inset:0; background:radial-gradient(ellipse 80% 60% at 50% 20%, rgba(0,80,60,0.18) 0%, transparent 70%), radial-gradient(ellipse 60% 40% at 70% 80%, rgba(80,0,120,0.12) 0%, transparent 60%), #03030a; z-index:-1; }
+    .land-eyebrow { display:flex; align-items:center; gap:8px; margin-bottom:20px; }
+    .land-eyebrow-dot { width:6px; height:6px; border-radius:50%; background:var(--accent); box-shadow:0 0 8px var(--accent); }
+    .land-eyebrow-text { font-size:0.62rem; letter-spacing:4px; color:rgba(0,255,204,0.7); }
+    .land-h1 { font-size:clamp(2.4rem,5.5vw,3.8rem); font-weight:200; letter-spacing:10px; text-align:center; color:#fff; margin-bottom:6px; line-height:1.1; }
+    .land-h1 span { background:linear-gradient(90deg,#00ffcc,#a78bfa); -webkit-background-clip:text; -webkit-text-fill-color:transparent; font-weight:400; }
+    .land-sub { font-size:0.85rem; color:rgba(255,255,255,0.38); text-align:center; max-width:380px; line-height:1.9; margin-bottom:40px; letter-spacing:0.3px; }
+    /* ECG decoration */
+    .land-ecg { width:100%; max-width:480px; height:32px; margin-bottom:36px; opacity:0.25; }
+    /* Feature grid */
+    .land-features { display:grid; grid-template-columns:1fr 1fr; max-width:540px; width:100%; gap:1px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.06); border-radius:20px; overflow:hidden; margin-bottom:40px; }
+    .land-feat { background:#060818; padding:22px 22px; display:flex; align-items:flex-start; gap:14px; transition:background 0.25s; cursor:default; }
+    .land-feat:hover { background:rgba(0,255,204,0.035); }
+    .land-feat-icon { width:36px; height:36px; flex-shrink:0; display:flex; align-items:center; justify-content:center; border-radius:9px; background:rgba(0,255,204,0.07); color:var(--accent); }
+    .land-feat-icon svg { width:18px; height:18px; }
+    .land-feat-body {}
+    .land-feat-title { font-size:0.75rem; letter-spacing:1.5px; color:rgba(255,255,255,0.88); margin-bottom:5px; }
+    .land-feat-desc { font-size:0.66rem; color:rgba(255,255,255,0.34); line-height:1.65; }
+    /* CTA */
+    .land-cta { display:flex; gap:10px; flex-wrap:wrap; justify-content:center; align-items:center; }
+    .land-login-btn { padding:12px 28px; background:transparent; border:1px solid rgba(255,255,255,0.15); color:rgba(255,255,255,0.5); border-radius:24px; cursor:pointer; font-family:'Courier New',monospace; font-size:0.78rem; letter-spacing:1px; transition:all 0.2s; }
+    .land-login-btn:hover { border-color:rgba(255,255,255,0.35); color:rgba(255,255,255,0.8); }
+    .land-guest-link { font-size:0.68rem; color:rgba(255,255,255,0.25); cursor:pointer; letter-spacing:1px; text-decoration:underline; text-underline-offset:3px; transition:color 0.2s; border:none; background:none; font-family:'Courier New',monospace; }
+    .land-guest-link:hover { color:rgba(255,255,255,0.5); }
+
+    /* ── Auth Modal ── */
+    #authOverlay { position:absolute; inset:0; z-index:110; background:rgba(0,0,0,0.75); backdrop-filter:blur(14px); display:flex; align-items:center; justify-content:center; transition:opacity 0.3s; }
+    .auth-card { background:rgba(6,8,18,0.97); border:1px solid var(--border); border-radius:20px; padding:36px 40px; width:90%; max-width:380px; }
+    .auth-tabs { display:flex; gap:0; margin-bottom:28px; border-bottom:1px solid var(--border); }
+    .auth-tab { flex:1; padding:10px; text-align:center; font-size:0.72rem; letter-spacing:2px; cursor:pointer; color:rgba(255,255,255,0.35); border-bottom:2px solid transparent; transition:all 0.2s; }
+    .auth-tab.active { color:var(--accent); border-bottom-color:var(--accent); }
+    .auth-field { display:flex; flex-direction:column; gap:6px; margin-bottom:16px; }
+    .auth-label { font-size:0.65rem; letter-spacing:2px; color:rgba(255,255,255,0.4); }
+    .auth-input { background:rgba(255,255,255,0.05); border:1px solid var(--border); border-radius:8px; padding:11px 14px; color:#fff; font-family:'Courier New',monospace; font-size:0.85rem; outline:none; transition:border-color 0.2s; }
+    .auth-input:focus { border-color:var(--accent); }
+    .auth-err { font-size:0.72rem; color:#ff4444; min-height:18px; text-align:center; margin-bottom:4px; }
+    .auth-divider { text-align:center; font-size:0.68rem; color:rgba(255,255,255,0.25); margin:14px 0 12px; }
+    .auth-guest { width:100%; padding:10px; background:transparent; border:1px solid var(--border); color:rgba(255,255,255,0.4); border-radius:8px; cursor:pointer; font-family:'Courier New',monospace; font-size:0.72rem; letter-spacing:1px; transition:all 0.2s; }
+    .auth-guest:hover { border-color:rgba(255,255,255,0.3); color:rgba(255,255,255,0.6); }
+
+    /* ── Profile badge ── */
+    #profileBadge { position:absolute; top:20px; left:20px; z-index:20; display:flex; align-items:center; gap:8px; background:var(--glass); backdrop-filter:blur(18px); border:1px solid var(--border); border-radius:24px; padding:7px 14px; cursor:pointer; transition:opacity 0.3s; }
+    #profileEmail { font-size:0.68rem; color:rgba(255,255,255,0.55); letter-spacing:1px; max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .prof-dot { width:7px; height:7px; border-radius:50%; background:var(--accent); box-shadow:0 0 6px var(--accent); flex-shrink:0; }
+    #profileMenu { position:absolute; top:44px; left:0; background:rgba(6,8,18,0.97); border:1px solid var(--border); border-radius:12px; padding:6px; min-width:160px; opacity:0; pointer-events:none; transition:opacity 0.2s; }
+    #profileMenu.open { opacity:1; pointer-events:auto; }
+    .pmenu-item { padding:9px 14px; font-size:0.72rem; letter-spacing:1px; color:rgba(255,255,255,0.55); cursor:pointer; border-radius:8px; transition:background 0.15s; }
+    .pmenu-item:hover { background:rgba(255,255,255,0.06); color:#fff; }
+    .pmenu-item.danger { color:#ff6666; }
+
+    /* ── History panel ── */
+    #historyOverlay { position:absolute; inset:0; z-index:80; background:rgba(0,0,0,0.7); backdrop-filter:blur(10px); overflow-y:auto; display:flex; justify-content:center; align-items:flex-start; padding:60px 20px 40px; transition:opacity 0.4s; }
+    .history-card { background:rgba(6,8,18,0.96); border:1px solid var(--border); border-radius:20px; padding:30px; width:100%; max-width:560px; }
+    .history-card h2 { font-size:0.72rem; letter-spacing:4px; color:rgba(255,255,255,0.35); margin-bottom:20px; }
+    .hist-empty { text-align:center; color:rgba(255,255,255,0.3); font-size:0.82rem; padding:30px 0; }
+    .hist-row { display:flex; align-items:center; gap:14px; padding:14px 0; border-bottom:1px solid rgba(255,255,255,0.05); }
+    .hist-row:last-child { border-bottom:none; }
+    .hist-score { width:44px; height:44px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:1.3rem; font-weight:bold; flex-shrink:0; }
+    .hist-meta { flex:1; }
+    .hist-date { font-size:0.7rem; color:rgba(255,255,255,0.4); letter-spacing:1px; }
+    .hist-detail { font-size:0.75rem; color:rgba(255,255,255,0.6); margin-top:2px; }
+    .hist-mode { font-size:0.6rem; letter-spacing:1px; padding:2px 8px; border-radius:10px; background:rgba(255,255,255,0.07); color:rgba(255,255,255,0.4); }
+    .hist-trend { display:flex; align-items:flex-end; gap:3px; height:36px; margin-left:auto; }
+    .hist-bar { width:8px; border-radius:2px 2px 0 0; min-height:4px; }
+  </style>
+</head>
+<body>
+<div id="container">
+
+  <!-- Landing (first visit / logged out) -->
+  <div id="landingOverlay" class="hidden">
+    <div class="land-eyebrow"><div class="land-eyebrow-dot"></div><span class="land-eyebrow-text">UPDRS 3.4 · AI ASSESSMENT</span><div class="land-eyebrow-dot"></div></div>
+    <h1 class="land-h1">Parki<span>Check</span></h1>
+    <p class="land-sub">파킨슨병 손가락 두드리기 검사를 집에서.<br>카메라만 있으면 임상등급 평가를 무료로 받을 수 있습니다.</p>
+
+    <!-- ECG decoration -->
+    <svg class="land-ecg" viewBox="0 0 480 32" fill="none" preserveAspectRatio="none">
+      <polyline points="0,16 60,16 80,16 90,4 100,28 110,4 120,22 130,16 180,16 200,16 214,8 220,24 226,8 232,20 238,16 300,16 320,16 330,10 336,22 342,10 348,18 354,16 420,16 480,16"
+        stroke="url(#ecg-grad)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <defs><linearGradient id="ecg-grad" x1="0" y1="0" x2="480" y2="0" gradientUnits="userSpaceOnUse">
+        <stop offset="0%" stop-color="#00ffcc" stop-opacity="0"/>
+        <stop offset="30%" stop-color="#00ffcc" stop-opacity="0.6"/>
+        <stop offset="70%" stop-color="#a78bfa" stop-opacity="0.6"/>
+        <stop offset="100%" stop-color="#a78bfa" stop-opacity="0"/>
+      </defs></svg>
+
+    <div class="land-features">
+      <!-- AI 트래킹 -->
+      <div class="land-feat">
+        <div class="land-feat-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 11V7a2 2 0 0 0-4 0v1M14 8V5a2 2 0 0 0-4 0v3M10 9V5a2 2 0 0 0-4 0v7l-2-2a1.9 1.9 0 0 0-2.7 2.7l3.6 3.6A6 6 0 0 0 6 21h8a6 6 0 0 0 6-6v-4a2 2 0 0 0-4 0z"/>
+          </svg>
+        </div>
+        <div class="land-feat-body">
+          <div class="land-feat-title">AI 핸드 트래킹</div>
+          <div class="land-feat-desc">MediaPipe 21-point<br>실시간 랜드마크 분석</div>
+        </div>
+      </div>
+      <!-- UPDRS 채점 -->
+      <div class="land-feat">
+        <div class="land-feat-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+          </svg>
+        </div>
+        <div class="land-feat-body">
+          <div class="land-feat-title">UPDRS 3.4 채점</div>
+          <div class="land-feat-desc">빈도·리듬·진폭·피로도<br>가중치 5인자 평가</div>
+        </div>
+      </div>
+      <!-- 기록 추적 -->
+      <div class="land-feat">
+        <div class="land-feat-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/>
+            <polyline points="16 7 22 7 22 13"/>
+          </svg>
+        </div>
+        <div class="land-feat-body">
+          <div class="land-feat-title">시계열 추적</div>
+          <div class="land-feat-desc">측정마다 저장되는<br>증상 변화 모니터링</div>
+        </div>
+      </div>
+      <!-- 전문가 연계 -->
+      <div class="land-feat">
+        <div class="land-feat-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+            <circle cx="9" cy="7" r="4"/>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>
+          </svg>
+        </div>
+        <div class="land-feat-body">
+          <div class="land-feat-title">전문가 연계</div>
+          <div class="land-feat-desc">재활 전문가와<br>결과 리포트 공유</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="land-cta">
+      <button class="btn-primary" id="landSignupBtn">무료로 시작하기</button>
+      <button class="land-login-btn" id="landLoginBtn">로그인</button>
+      <button class="land-guest-link" id="landGuestBtn">로그인 없이 체험</button>
+    </div>
+  </div>
+
+  <!-- Auth Modal -->
+  <div id="authOverlay" class="hidden">
+    <div class="auth-card">
+      <div class="auth-tabs">
+        <div class="auth-tab active" id="tabLogin" onclick="switchAuthTab('login')">LOGIN</div>
+        <div class="auth-tab" id="tabSignup" onclick="switchAuthTab('signup')">SIGN UP</div>
+      </div>
+      <div id="authLoginForm">
+        <div class="auth-field"><label class="auth-label">EMAIL</label><input class="auth-input" id="loginEmail" type="email" placeholder="you@email.com" autocomplete="email"></div>
+        <div class="auth-field"><label class="auth-label">PASSWORD</label><input class="auth-input" id="loginPw" type="password" placeholder="••••••••" autocomplete="current-password"></div>
+        <div class="auth-err" id="loginErr"></div>
+        <button class="btn-primary" style="width:100%" id="loginBtn" onclick="doLogin()">LOGIN</button>
+      </div>
+      <div id="authSignupForm" style="display:none">
+        <div class="auth-field"><label class="auth-label">EMAIL</label><input class="auth-input" id="signupEmail" type="email" placeholder="you@email.com" autocomplete="email"></div>
+        <div class="auth-field"><label class="auth-label">PASSWORD</label><input class="auth-input" id="signupPw" type="password" placeholder="8자 이상" autocomplete="new-password"></div>
+        <div class="auth-err" id="signupErr"></div>
+        <button class="btn-primary" style="width:100%" id="signupBtn" onclick="doSignup()">CREATE ACCOUNT</button>
+      </div>
+      <div class="auth-divider">또는</div>
+      <button class="auth-guest" onclick="continueAsGuest()">로그인 없이 계속</button>
+    </div>
+  </div>
+
+  <!-- Profile badge (logged in) -->
+  <div id="profileBadge" class="hidden">
+    <div class="prof-dot"></div>
+    <span id="profileEmail">—</span>
+    <div id="profileMenu">
+      <div class="pmenu-item" onclick="showHistory()">📊 내 기록</div>
+      <div class="pmenu-item danger" onclick="doSignOut()">로그아웃</div>
+    </div>
+  </div>
+
+  <!-- History panel -->
+  <div id="historyOverlay" class="hidden">
+    <div class="history-card">
+      <h2>MY RESULTS — UPDRS 3.4</h2>
+      <div id="historyList"><div class="hist-empty">불러오는 중...</div></div>
+      <div style="text-align:center;margin-top:20px">
+        <button class="btn-primary btn-ghost" onclick="$('historyOverlay').classList.add('hidden')">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Init -->
+  <div id="startOverlay">
+    <h1>FINGER TAP FX</h1>
+    <p>Live finger tracking + UPDRS assessment.<br>Upload video for offline analysis.</p>
+    <button class="btn-primary" id="startBtn">Enter Experience</button>
+  </div>
+
+  <video id="video" autoplay playsinline></video>
+  <canvas id="canvas"></canvas>
+
+  <!-- Free play HUD -->
+  <div id="hud">
+    <div class="panel">
+      <div class="stat">TAPS  <span class="val" id="tapCount">0</span></div>
+      <div class="stat">BPM   <span class="val" id="bpm">--</span></div>
+      <div class="stat">COMBO <span class="val" id="comboNum">0</span></div>
+    </div>
+    <div class="panel" id="comboPanel"><div id="comboDisplay"></div></div>
+  </div>
+
+  <!-- Mode switch -->
+  <div id="modeSwitch">
+    <button class="mode-btn active" id="btnFree">FREE</button>
+    <button class="mode-btn" id="btnUpdrs">UPDRS</button>
+    <button class="mode-btn" id="btnVideo">VIDEO</button>
+  </div>
+
+  <!-- Finger legend -->
+  <div id="legend">
+    <div class="fi"><div class="dot" style="background:#00ffcc;box-shadow:0 0 6px #00ffcc"></div>INDEX</div>
+    <div class="fi"><div class="dot" style="background:#ff00ff;box-shadow:0 0 6px #ff00ff"></div>MIDDLE</div>
+    <div class="fi"><div class="dot" style="background:#ffff00;box-shadow:0 0 6px #ffff00"></div>RING</div>
+    <div class="fi"><div class="dot" style="background:#ff6600;box-shadow:0 0 6px #ff6600"></div>PINKY</div>
+  </div>
+
+  <!-- UPDRS live test -->
+  <div id="updrsTestOverlay" class="ov-center hidden">
+    <div class="ov-card">
+      <div class="ov-h2">UPDRS 3.4</div>
+      <div class="ov-sub">FINGER TAPPING TEST</div>
+      <p class="ov-p">검지를 엄지에 최대한 <strong style="color:#fff">빠르고 넓게</strong> 탭하세요.<br>10초간 측정합니다.<br><br>손을 카메라에 잘 보이게 위치시킨 후<br>준비되면 시작 버튼을 누르세요.</p>
+      <button class="btn-primary" id="testStartBtn">START TEST</button>
+    </div>
+  </div>
+
+  <!-- Countdown -->
+  <div id="countdown"><div id="countdownNum" style="color:#00ffcc">3</div></div>
+
+  <!-- Test HUD -->
+  <div id="testHud">
+    <div class="timer-ring">
+      <svg width="110" height="110" viewBox="0 0 110 110">
+        <circle class="t-bg" cx="55" cy="55" r="46"/>
+        <circle class="t-fg" id="timerRing" cx="55" cy="55" r="46" stroke-dasharray="289.0" stroke-dashoffset="0"/>
+      </svg>
+      <div id="timerText">10</div>
+    </div>
+    <div id="testTapCount">0</div>
+    <div id="testTapLabel">TAPS</div>
+  </div>
+
+  <!-- VIDEO: drop zone -->
+  <div id="videoDropOverlay" class="ov-center hidden">
+    <div class="ov-card">
+      <div class="ov-h2">VIDEO ANALYSIS</div>
+      <div class="ov-sub">OFFLINE UPDRS ASSESSMENT</div>
+      <div class="drop-zone" id="dropZone">
+        <div class="drop-icon">⬆</div>
+        <div class="drop-title">DROP VIDEO FILE</div>
+        <div class="drop-sub">or click to browse</div>
+        <div class="drop-hint">MP4 · MOV · WEBM — any duration</div>
+      </div>
+      <input type="file" id="videoFileInput" accept="video/*" style="display:none">
+    </div>
+  </div>
+
+  <!-- VIDEO: processing progress -->
+  <div id="videoProgressOverlay" class="ov-center hidden">
+    <div class="vp-card">
+      <div class="vp-title">ANALYZING VIDEO</div>
+      <div id="vpFileName">—</div>
+      <div class="vp-bar-wrap"><div id="vpProgress"></div></div>
+      <div class="vp-stats">
+        <span id="vpTime">0.0s</span>
+        <span id="vpTaps">0 taps</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Results (shared between live UPDRS + video) -->
+  <div id="resultsOverlay">
+    <div class="results-card">
+      <h2 id="resultsTitleH2">UPDRS 3.4 — FINGER TAPPING</h2>
+      <div id="updrsScore">—</div>
+      <div id="updrsLabel">SCORE / 4</div>
+      <div class="metrics-grid">
+        <div class="metric-box"><div class="metric-val" id="resTaps">0</div><div class="metric-lbl" id="lblTaps">TAPS / 10s</div></div>
+        <div class="metric-box"><div class="metric-val" id="resFreq">0</div><div class="metric-lbl">TAPS / SEC</div></div>
+        <div class="metric-box"><div class="metric-val" id="resArrests">0</div><div class="metric-lbl">ARRESTS</div></div>
+        <div class="metric-box"><div class="metric-val" id="resITI">--</div><div class="metric-lbl">ITI CV (%)</div></div>
+        <div class="metric-box"><div class="metric-val" id="resMaxAmp">--</div><div class="metric-lbl">MAX AMP</div></div>
+        <div class="metric-box"><div class="metric-val" id="resFatig">--</div><div class="metric-lbl">FATIG %</div></div>
+      </div>
+      <div id="ampChartWrap">
+        <div id="ampChartLabel">AMPLITUDE PER TAP</div>
+        <div id="ampChart"></div>
+        <div id="fatigRow">
+          <span id="fatigLabel">FATIGABILITY</span>
+          <span id="fatigVal">--</span>
+        </div>
+      </div>
+      <div id="factorBreakdown">
+        <div class="factor-title">SCORING FACTORS</div>
+        <div class="factor-row"><span class="f-name">FREQUENCY</span><div class="f-bar-wrap"><div class="f-bar" id="fb-freq"></div></div><span class="f-score" id="fs-freq">0/4</span></div>
+        <div class="factor-row"><span class="f-name">ARRESTS</span><div class="f-bar-wrap"><div class="f-bar" id="fb-arrest"></div></div><span class="f-score" id="fs-arrest">0/4</span></div>
+        <div class="factor-row"><span class="f-name">RHYTHM</span><div class="f-bar-wrap"><div class="f-bar" id="fb-rhythm"></div></div><span class="f-score" id="fs-rhythm">0/4</span></div>
+        <div class="factor-row"><span class="f-name">AMPLITUDE</span><div class="f-bar-wrap"><div class="f-bar" id="fb-amp"></div></div><span class="f-score" id="fs-amp">0/4</span></div>
+        <div class="factor-row"><span class="f-name">FATIGABILITY</span><div class="f-bar-wrap"><div class="f-bar" id="fb-fatig"></div></div><span class="f-score" id="fs-fatig">0/4</span></div>
+      </div>
+      <div id="confidenceTag">-- CONFIDENCE</div>
+      <div id="updrsDesc"></div>
+      <div id="saveResultRow" style="margin-bottom:12px;display:flex;gap:8px;justify-content:center">
+        <button class="btn-primary" id="saveResultBtn" onclick="handleSaveResult()" style="font-size:0.78rem;padding:10px 22px">💾 결과 저장</button>
+        <span id="saveResultMsg" style="font-size:0.72rem;color:rgba(255,255,255,0.45);align-self:center"></span>
+      </div>
+      <button class="btn-primary" id="testRetryBtn">RETRY</button>
+      <button class="btn-primary btn-ghost" id="testDoneBtn">DONE</button>
+    </div>
+  </div>
+
+</div>
+<script>
+// ═══════════════════════════════════════════
+// SUPABASE — replace anon key before deploy
+// ═══════════════════════════════════════════
+const SUPA_URL  = 'https://bverkizzwhbiggpzsvlo.supabase.co';
+const SUPA_KEY  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ2ZXJraXp6d2hiaWdncHpzdmxvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUyODcyMjcsImV4cCI6MjA5MDg2MzIyN30.bi-YqpS1tUq52iGYYCMRcdcUAtKGiesxIizvUjSBUHE';
+let supa;
+try {
+  supa = (window.supabase || window.Supabase).createClient(SUPA_URL, SUPA_KEY);
+} catch(e) {
+  console.error('Supabase init failed:', e);
+  // mock so rest of script runs
+  supa = { auth: { onAuthStateChange:()=>{}, getSession:()=>Promise.resolve({data:{session:null}}), signInWithPassword:()=>Promise.resolve({error:{message:'Auth unavailable'}}), signUp:()=>Promise.resolve({data:{},error:{message:'Auth unavailable'}}), signOut:()=>Promise.resolve({}) }, from:()=>({select:()=>({order:()=>({limit:()=>Promise.resolve({data:[]})})}),insert:()=>Promise.resolve({error:null})}) };
+}
+
+let currentUser = null;
+let lastResultPayload = null; // holds latest test result for deferred save
+
+supa.auth.onAuthStateChange((_e, session) => {
+  currentUser = session?.user ?? null;
+  updateAuthUI();
+});
+
+function updateAuthUI() {
+  const pb = document.getElementById('profileBadge');
+  if (currentUser) {
+    pb.classList.remove('hidden');
+    document.getElementById('profileEmail').textContent = currentUser.email;
+  } else {
+    pb.classList.add('hidden');
+  }
+}
+
+function switchAuthTab(tab) {
+  document.getElementById('authLoginForm').style.display  = tab==='login'  ? '' : 'none';
+  document.getElementById('authSignupForm').style.display = tab==='signup' ? '' : 'none';
+  document.getElementById('tabLogin').classList.toggle('active', tab==='login');
+  document.getElementById('tabSignup').classList.toggle('active', tab==='signup');
+}
+
+function openAuth(tab='login') {
+  switchAuthTab(tab);
+  document.getElementById('authOverlay').classList.remove('hidden');
+}
+
+async function doLogin() {
+  const email = document.getElementById('loginEmail').value.trim();
+  const pw    = document.getElementById('loginPw').value;
+  const errEl = document.getElementById('loginErr');
+  errEl.textContent = '';
+  document.getElementById('loginBtn').textContent = '...';
+  const { error } = await supa.auth.signInWithPassword({ email, password: pw });
+  document.getElementById('loginBtn').textContent = 'LOGIN';
+  if (error) { errEl.textContent = error.message; return; }
+  document.getElementById('authOverlay').classList.add('hidden');
+  document.getElementById('landingOverlay').classList.add('hidden');
+  if (lastResultPayload) { saveResultToDb(lastResultPayload); lastResultPayload = null; }
+}
+
+async function doSignup() {
+  const email = document.getElementById('signupEmail').value.trim();
+  const pw    = document.getElementById('signupPw').value;
+  const errEl = document.getElementById('signupErr');
+  errEl.textContent = ''; errEl.style.color = '#ff4444';
+  if (!email) { errEl.textContent = '이메일을 입력하세요.'; return; }
+  if (pw.length < 8) { errEl.textContent = '비밀번호는 8자 이상이어야 합니다.'; return; }
+  document.getElementById('signupBtn').textContent = '...';
+  const { data, error } = await supa.auth.signUp({ email, password: pw });
+  document.getElementById('signupBtn').textContent = 'CREATE ACCOUNT';
+  if (error) { errEl.textContent = error.message; return; }
+  // auto-confirm ON → session returned immediately
+  if (data.session) {
+    document.getElementById('authOverlay').classList.add('hidden');
+    document.getElementById('landingOverlay').classList.add('hidden');
+    if (lastResultPayload) { saveResultToDb(lastResultPayload); lastResultPayload = null; }
+  } else {
+    errEl.style.color = '#00ffcc';
+    errEl.textContent = '가입 완료! 이메일을 확인해 인증 후 로그인하세요.';
+  }
+}
+
+async function doSignOut() {
+  await supa.auth.signOut();
+  document.getElementById('profileMenu').classList.remove('open');
+  document.getElementById('landingOverlay').classList.remove('hidden');
+}
+
+function continueAsGuest() {
+  document.getElementById('authOverlay').classList.add('hidden');
+  document.getElementById('landingOverlay').classList.add('hidden');
+}
+
+// ── Save result ─────────────────────────────
+async function saveResultToDb(payload) {
+  const msgEl = document.getElementById('saveResultMsg');
+  const btnEl = document.getElementById('saveResultBtn');
+  btnEl.disabled = true;
+  msgEl.textContent = '저장 중...';
+  const { error } = await supa.from('updrs_results').insert({ ...payload, user_id: currentUser.id });
+  btnEl.disabled = false;
+  if (error) {
+    msgEl.textContent = '저장 실패: ' + error.message;
+  } else {
+    msgEl.style.color = '#00ffcc';
+    msgEl.textContent = '✓ 저장되었습니다';
+    btnEl.style.display = 'none';
+  }
+}
+
+function handleSaveResult() {
+  if (!lastResultPayload) return;
+  if (!currentUser) {
+    openAuth('login');
+    return;
+  }
+  saveResultToDb(lastResultPayload);
+}
+
+// ── History ─────────────────────────────────
+async function showHistory() {
+  document.getElementById('profileMenu').classList.remove('open');
+  document.getElementById('historyOverlay').classList.remove('hidden');
+  const listEl = document.getElementById('historyList');
+  listEl.innerHTML = '<div class="hist-empty">불러오는 중...</div>';
+  const { data, error } = await supa
+    .from('updrs_results')
+    .select('tested_at,mode,score,n_taps,frequency,fatigability,confidence')
+    .order('tested_at', { ascending: false })
+    .limit(50);
+  if (error || !data?.length) {
+    listEl.innerHTML = '<div class="hist-empty">아직 기록이 없습니다.</div>'; return;
+  }
+  const colors = ['#00ffcc','#88ff44','#ffff00','#ff8800','#ff2244'];
+  const labels = ['정상','경미','중등도','심각','최중증'];
+  listEl.innerHTML = data.map(r => {
+    const d = new Date(r.tested_at);
+    const dateStr = `${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')}`;
+    const c = colors[r.score] || '#fff';
+    return `<div class="hist-row">
+      <div class="hist-score" style="background:${c}22;border:2px solid ${c};color:${c}">${r.score}</div>
+      <div class="hist-meta">
+        <div class="hist-date">${dateStr} &nbsp;<span class="hist-mode">${r.mode==='live'?'LIVE':'VIDEO'}</span></div>
+        <div class="hist-detail">${labels[r.score]} · ${r.n_taps??'-'}회 · ${r.frequency?.toFixed(1)??'-'}Hz · fatig ${r.fatigability?.toFixed(0)??'-'}%</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════
+// CONFIG
+// ═══════════════════════════════════════════
+const THUMB_TIP    = 4;
+const FINGER_TIPS  = [8,12,16,20];
+const FINGER_COLORS= ['#00ffcc','#ff00ff','#ffff00','#ff6600'];
+const FINGER_FREQS = [523,659,784,1047];
+const TAP_THRESH   = 0.065;
+const TAP_COOLDOWN = 140;
+const COMBO_WINDOW = 1300;
+const TEST_DURATION    = 10000;
+const ARREST_THRESHOLD = 600;
+const CIRCUMFERENCE    = 2 * Math.PI * 46;
+
+const CONNECTIONS = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
+
+// ═══════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════
+let effects = [], bgWaves = [];
+let tapCount = 0, combo = 0, lastTapTime = 0, tapHistory = [];
+let audioCtx = null, handResults = null;
+
+const prevTap = {}, lastTapMs = {}, trails = {};
+
+// App mode: 'free' | 'updrs' | 'video'
+let appMode = 'free';
+
+// UPDRS live test state
+let testState = 'idle';
+let graphPulse = 0; // pulse ring decay on latest graph point
+const testData = { taps:[], startTime:0, arrests:0, lastTapT:0, currentMaxDist:0 };
+
+// Video analysis
+let pendingResolve = null;   // resolves after each hands.onResults in video mode
+let videoAnalysisDuration = 10; // seconds (updated from actual video)
+let vLB = { x:0, y:0, w:0, h:0 }; // letterbox geometry for current video
+
+// ═══════════════════════════════════════════
+// AUDIO
+// ═══════════════════════════════════════════
+function initAudio() { audioCtx = new (window.AudioContext||window.webkitAudioContext)(); }
+function playTap(freq, lvl) {
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime;
+  const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+  o.connect(g); g.connect(audioCtx.destination);
+  o.type = lvl >= 5 ? 'sawtooth' : 'sine';
+  o.frequency.setValueAtTime(freq, t);
+  o.frequency.exponentialRampToValueAtTime(freq * (lvl >= 3 ? 1.8 : 1.3), t + 0.06);
+  const vol = Math.min(0.15 + lvl * 0.02, 0.35);
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+  o.start(t); o.stop(t + 0.18);
+}
+
+// ═══════════════════════════════════════════
+// EFFECT CLASSES
+// ═══════════════════════════════════════════
+class Particle {
+  constructor(x,y,color,s=1){this.x=x;this.y=y;this.color=color;const a=Math.random()*Math.PI*2,sp=(4+Math.random()*11)*s;this.vx=Math.cos(a)*sp;this.vy=Math.sin(a)*sp-3*s;this.life=1;this.decay=0.013+Math.random()*0.018;this.size=(1.5+Math.random()*3.5)*s;this.trail=[];}
+  update(){this.trail.push({x:this.x,y:this.y});if(this.trail.length>6)this.trail.shift();this.x+=this.vx;this.y+=this.vy;this.vy+=0.22;this.vx*=0.97;this.life-=this.decay;}
+  draw(ctx){if(this.life<=0)return;this.trail.forEach((t,i)=>{ctx.save();ctx.globalAlpha=(i/this.trail.length)*this.life*0.35;ctx.fillStyle=this.color;ctx.beginPath();ctx.arc(t.x,t.y,this.size*(i/this.trail.length)*0.6,0,Math.PI*2);ctx.fill();ctx.restore();});ctx.save();ctx.globalAlpha=this.life;ctx.shadowBlur=14;ctx.shadowColor=this.color;ctx.fillStyle=this.color;ctx.beginPath();ctx.arc(this.x,this.y,Math.max(0.1,this.size*this.life),0,Math.PI*2);ctx.fill();ctx.restore();}
+  isDead(){return this.life<=0;}
+}
+class Shockwave {
+  constructor(x,y,color,d=0,s=1){this.x=x;this.y=y;this.color=color;this.r=4;this.maxR=(65+Math.random()*55)*s;this.life=1;this.timer=d;this.active=d===0;}
+  update(){if(this.timer>0){this.timer--;return;}this.active=true;this.r+=6;this.life=Math.max(0,1-this.r/this.maxR);}
+  draw(ctx){if(!this.active||this.life<=0)return;ctx.save();ctx.globalAlpha=this.life*0.9;ctx.strokeStyle=this.color;ctx.lineWidth=2.5*this.life+0.5;ctx.shadowBlur=28;ctx.shadowColor=this.color;ctx.beginPath();ctx.arc(this.x,this.y,this.r,0,Math.PI*2);ctx.stroke();ctx.restore();}
+  isDead(){return this.active&&this.life<=0;}
+}
+class Lightning {
+  constructor(x,y,color){this.x=x;this.y=y;this.color=color;this.bolts=this._gen();this.life=1;}
+  _gen(){const b=[];const n=5+Math.floor(Math.random()*5);for(let i=0;i<n;i++){const ang=(i/n)*Math.PI*2+(Math.random()-0.5)*0.5,len=55+Math.random()*110;let cx=this.x,cy=this.y;const pts=[[cx,cy]];const st=7+Math.floor(Math.random()*6);for(let s=0;s<st;s++){cx+=Math.cos(ang)*(len/st)+(Math.random()-0.5)*32;cy+=Math.sin(ang)*(len/st)+(Math.random()-0.5)*32;pts.push([cx,cy]);}b.push(pts);}return b;}
+  draw(ctx){ctx.save();ctx.globalAlpha=this.life;ctx.strokeStyle=this.color;ctx.lineWidth=2.5;ctx.shadowBlur=24;ctx.shadowColor=this.color;this.bolts.forEach(p=>{ctx.beginPath();ctx.moveTo(p[0][0],p[0][1]);for(let i=1;i<p.length;i++)ctx.lineTo(p[i][0],p[i][1]);ctx.stroke();});ctx.strokeStyle='#fff';ctx.lineWidth=1;ctx.shadowBlur=0;this.bolts.forEach(p=>{ctx.beginPath();ctx.moveTo(p[0][0],p[0][1]);for(let i=1;i<p.length;i++)ctx.lineTo(p[i][0],p[i][1]);ctx.stroke();});ctx.restore();this.life-=0.1;}
+  isDead(){return this.life<=0;}
+}
+class Burst {
+  constructor(x,y,color){this.x=x;this.y=y;this.color=color;this.life=1;this.r=4;this.rays=Array.from({length:14},(_,i)=>({angle:(i/14)*Math.PI*2+(Math.random()-0.5)*0.3,length:25+Math.random()*50}));}
+  update(){this.life-=0.055;this.r+=2.5;}
+  draw(ctx){ctx.save();ctx.globalAlpha=this.life;ctx.strokeStyle=this.color;ctx.lineWidth=2;ctx.shadowBlur=16;ctx.shadowColor=this.color;const p=1-this.life;this.rays.forEach(r=>{const s=this.r*0.25,e=s+r.length*p;ctx.beginPath();ctx.moveTo(this.x+Math.cos(r.angle)*s,this.y+Math.sin(r.angle)*s);ctx.lineTo(this.x+Math.cos(r.angle)*e,this.y+Math.sin(r.angle)*e);ctx.stroke();});ctx.restore();}
+  isDead(){return this.life<=0;}
+}
+class GlowPulse {
+  constructor(x,y,color){this.x=x;this.y=y;this.color=color;this.life=1;this.r=8;}
+  update(){this.life-=0.045;this.r+=1.5;}
+  draw(ctx){ctx.save();ctx.globalAlpha=this.life;ctx.shadowBlur=35;ctx.shadowColor=this.color;ctx.fillStyle=this.color;ctx.beginPath();ctx.arc(this.x,this.y,this.r*this.life+4,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;ctx.fillStyle='#fff';ctx.globalAlpha=this.life*0.9;ctx.beginPath();ctx.arc(this.x,this.y,4,0,Math.PI*2);ctx.fill();ctx.restore();}
+  isDead(){return this.life<=0;}
+}
+class RingSegment {
+  constructor(x,y,color,s=1){this.x=x;this.y=y;this.color=color;this.life=1;this.r=12*s;this.rot=Math.random()*Math.PI*2;this.segs=5+Math.floor(Math.random()*5);this.rotSpd=(Math.random()-0.5)*0.12;}
+  update(){this.life-=0.03;this.r+=3;this.rot+=this.rotSpd;}
+  draw(ctx){if(this.life<=0)return;ctx.save();ctx.globalAlpha=this.life;ctx.strokeStyle=this.color;ctx.lineWidth=2;ctx.shadowBlur=12;ctx.shadowColor=this.color;ctx.translate(this.x,this.y);ctx.rotate(this.rot);for(let i=0;i<this.segs;i++){const a1=(i/this.segs)*Math.PI*2,a2=((i+0.65)/this.segs)*Math.PI*2;ctx.beginPath();ctx.arc(0,0,this.r,a1,a2);ctx.stroke();}ctx.restore();}
+  isDead(){return this.life<=0;}
+}
+class FloatingText {
+  constructor(x,y,text,color,size=24){this.x=x;this.y=y;this.text=text;this.color=color;this.life=1;this.vy=-4.5;this.size=size;}
+  update(){this.y+=this.vy;this.vy*=0.91;this.life-=0.016;}
+  draw(ctx){const a=Math.min(this.life*2.2,1);ctx.save();ctx.globalAlpha=a;ctx.font=`bold ${this.size}px 'Courier New',monospace`;ctx.textAlign='center';ctx.shadowBlur=22;ctx.shadowColor=this.color;ctx.fillStyle=this.color;ctx.fillText(this.text,this.x,this.y);ctx.shadowBlur=0;ctx.fillStyle='rgba(255,255,255,0.25)';ctx.fillText(this.text,this.x,this.y);ctx.restore();}
+  isDead(){return this.life<=0;}
+}
+class ScreenFlash {
+  constructor(color){this.color=color;this.life=0.55;}
+  update(){this.life-=0.07;}
+  draw(ctx,w,h){ctx.save();ctx.globalAlpha=Math.max(0,this.life)*0.22;ctx.fillStyle=this.color;ctx.fillRect(0,0,w,h);ctx.restore();}
+  isDead(){return this.life<=0;}
+}
+class FingerTrail {
+  constructor(color){this.color=color;this.pts=[];}
+  add(x,y){const now=Date.now(),last=this.pts[this.pts.length-1];if(last&&Math.hypot(x-last.x,y-last.y)<5)return;this.pts.push({x,y,t:now});const cut=now-700;while(this.pts.length&&this.pts[0].t<cut)this.pts.shift();if(this.pts.length>34)this.pts.shift();}
+  draw(ctx){if(this.pts.length<3)return;const now=Date.now();for(let i=1;i<this.pts.length-1;i++){const p0=this.pts[i-1],p1=this.pts[i],p2=this.pts[i+1];const age=(now-p1.t)/700,alpha=Math.max(0,1-age)*0.85;if(alpha<0.01)continue;const mx1=(p0.x+p1.x)/2,my1=(p0.y+p1.y)/2,mx2=(p1.x+p2.x)/2,my2=(p1.y+p2.y)/2;ctx.save();ctx.globalAlpha=alpha;ctx.strokeStyle=this.color;ctx.lineWidth=(1-age)*7+0.5;ctx.lineCap='round';ctx.lineJoin='round';ctx.shadowBlur=18;ctx.shadowColor=this.color;ctx.beginPath();ctx.moveTo(mx1,my1);ctx.quadraticCurveTo(p1.x,p1.y,mx2,my2);ctx.stroke();ctx.restore();}}
+}
+class BgWave {
+  constructor(x,y,color){this.x=x;this.y=y;this.color=color;this.r=30;this.life=1;this.maxR=Math.hypot(window.innerWidth,window.innerHeight)*0.85;}
+  update(){this.r+=20;this.life=Math.max(0,1-this.r/this.maxR);}
+  draw(ctx){if(this.life<=0)return;ctx.save();ctx.globalAlpha=this.life*0.11;ctx.strokeStyle=this.color;ctx.lineWidth=70*this.life+12;ctx.shadowBlur=60;ctx.shadowColor=this.color;ctx.beginPath();ctx.arc(this.x,this.y,this.r,0,Math.PI*2);ctx.stroke();ctx.restore();}
+  isDead(){return this.life<=0;}
+}
+
+// ═══════════════════════════════════════════
+// TRAIL HELPER
+// ═══════════════════════════════════════════
+function getTrail(hi, fi) {
+  const k=`${hi}-${fi}`;
+  if(!trails[k]) trails[k]=new FingerTrail(fi==='t'?'rgba(255,255,255,0.7)':FINGER_COLORS[fi]);
+  return trails[k];
+}
+
+// ═══════════════════════════════════════════
+// LIVE GRAPH (real-time amplitude curve during test)
+// ═══════════════════════════════════════════
+function drawLiveGraph(W, H) {
+  const taps = testData.taps;
+  if (!taps.length) return;
+  const n = taps.length;
+  const GW = 224, GH = 118, GX = 20, GY = H - GH - 24;
+  const pad = { t: 20, r: 12, b: 22, l: 14 };
+  const iW = GW - pad.l - pad.r, iH = GH - pad.t - pad.b;
+
+  // Panel background
+  ctx.save();
+  ctx.globalAlpha = 0.8;
+  ctx.fillStyle = 'rgba(6,8,18,0.88)';
+  ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(GX, GY, GW, GH, 12);
+  else ctx.rect(GX, GY, GW, GH);
+  ctx.fill(); ctx.stroke();
+  ctx.restore();
+
+  // Title + n=
+  ctx.save();
+  ctx.globalAlpha = 0.42;
+  ctx.fillStyle = '#fff';
+  ctx.font = '9px "Courier New",monospace';
+  ctx.textAlign = 'left';  ctx.fillText('AMPLITUDE TREND', GX + pad.l, GY + 13);
+  ctx.textAlign = 'right'; ctx.fillText(`n=${n}`, GX + GW - pad.r, GY + 13);
+  ctx.restore();
+
+  const maxA  = Math.max(...taps.map(t => t.amplitude), 0.001);
+  const base3 = taps.slice(0, Math.min(3, n)).reduce((s, t) => s + t.amplitude, 0) / Math.min(3, n) || 0.001;
+
+  let fatig = 0;
+  if (n >= 6) {
+    const avg = arr => arr.reduce((s, t) => s + t.amplitude, 0) / arr.length;
+    const half = Math.floor(n / 2);
+    fatig = Math.max(0, (1 - avg(taps.slice(-half)) / avg(taps.slice(0, half))) * 100);
+  }
+
+  const px = i => GX + pad.l + (n > 1 ? (i / (n - 1)) * iW : iW / 2);
+  const py = a  => GY + pad.t + (1 - Math.min(a / (maxA * 1.08), 1)) * iH;
+
+  // Baseline dashed line
+  const baselineY = py(base3);
+  ctx.save();
+  ctx.globalAlpha = 0.32;
+  ctx.strokeStyle = '#00ffcc';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3, 5]);
+  ctx.beginPath();
+  ctx.moveTo(GX + pad.l, baselineY);
+  ctx.lineTo(GX + pad.l + iW, baselineY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+
+  // Single point early return
+  if (n < 2) {
+    ctx.save();
+    ctx.fillStyle = '#00ffcc'; ctx.shadowBlur = 12; ctx.shadowColor = '#00ffcc';
+    ctx.beginPath(); ctx.arc(px(0), py(taps[0].amplitude), 4, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+    return;
+  }
+
+  // Build smooth bezier path helper
+  function buildPath() {
+    ctx.beginPath();
+    ctx.moveTo(px(0), py(taps[0].amplitude));
+    for (let i = 1; i < n; i++) {
+      const x0 = px(i-1), y0 = py(taps[i-1].amplitude);
+      const x1 = px(i),   y1 = py(taps[i].amplitude);
+      ctx.bezierCurveTo((x0+x1)/2, y0, (x0+x1)/2, y1, x1, y1);
+    }
+  }
+
+  // Gradient fill under curve
+  const fillGrad = ctx.createLinearGradient(0, GY + pad.t, 0, GY + pad.t + iH);
+  fillGrad.addColorStop(0, 'rgba(0,255,204,0.28)');
+  fillGrad.addColorStop(0.55, 'rgba(255,200,0,0.10)');
+  fillGrad.addColorStop(1, 'rgba(255,34,68,0.03)');
+  ctx.save();
+  buildPath();
+  ctx.lineTo(px(n-1), GY + pad.t + iH);
+  ctx.lineTo(px(0), GY + pad.t + iH);
+  ctx.closePath();
+  ctx.fillStyle = fillGrad; ctx.globalAlpha = 0.68;
+  ctx.fill();
+  ctx.restore();
+
+  // Main line
+  const lastRatio = taps[n-1].amplitude / base3;
+  const lineColor = lastRatio >= 0.85 ? '#00ffcc' : lastRatio >= 0.65 ? '#88ff44' : lastRatio >= 0.45 ? '#ffff00' : lastRatio >= 0.25 ? '#ff8800' : '#ff2244';
+  ctx.save();
+  buildPath();
+  ctx.strokeStyle = lineColor; ctx.lineWidth = 2.2;
+  ctx.shadowBlur = 14; ctx.shadowColor = lineColor;
+  ctx.globalAlpha = 0.88; ctx.stroke();
+  ctx.restore();
+
+  // Per-tap dots + pulse ring on latest
+  taps.forEach((tap, i) => {
+    const r2 = tap.amplitude / base3;
+    const dc = r2 >= 0.85 ? '#00ffcc' : r2 >= 0.65 ? '#88ff44' : r2 >= 0.45 ? '#ffff00' : r2 >= 0.25 ? '#ff8800' : '#ff2244';
+    const isLast = i === n - 1;
+    ctx.save();
+    ctx.fillStyle = dc; ctx.shadowBlur = isLast ? 16 : 6; ctx.shadowColor = dc;
+    ctx.globalAlpha = isLast ? 1 : 0.5;
+    ctx.beginPath(); ctx.arc(px(i), py(tap.amplitude), isLast ? 5 : 2.5, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+    if (isLast && graphPulse > 0) {
+      ctx.save();
+      ctx.globalAlpha = graphPulse * 0.65;
+      ctx.strokeStyle = dc; ctx.lineWidth = 1.5;
+      ctx.shadowBlur = 18; ctx.shadowColor = dc;
+      ctx.beginPath(); ctx.arc(px(i), py(tap.amplitude), 5 + (1 - graphPulse) * 18, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+    }
+  });
+
+  // Fatigability readout
+  const fc = fatig < 15 ? '#00ffcc' : fatig < 35 ? '#ffff00' : '#ff4444';
+  ctx.save();
+  ctx.globalAlpha = 0.45;
+  ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.font = '9px "Courier New",monospace'; ctx.textAlign = 'left';
+  ctx.fillText('FATIG', GX + pad.l, GY + GH - 6);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = fc; ctx.shadowBlur = n >= 6 ? 8 : 0; ctx.shadowColor = fc;
+  ctx.font = 'bold 10px "Courier New",monospace'; ctx.textAlign = 'right';
+  ctx.fillText(n >= 6 ? `↓${fatig.toFixed(0)}%` : '---', GX + GW - pad.r, GY + GH - 6);
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════════
+// UPDRS SCORING  (weighted multi-factor)
+// ═══════════════════════════════════════════
+const FACTOR_WEIGHTS = {freq:0.35, arrest:0.25, rhythm:0.15, amp:0.15, fatig:0.10};
+const clamp = (v,lo=0,hi=4) => Math.max(lo,Math.min(hi,v));
+
+const UPDRS_DESC = [
+  'Normal. No signs of bradykinesia or fatigability.',
+  'Mild slowing and/or amplitude reduction. 1–2 hesitations.',
+  'Moderate impairment. Definite fatiguing. 3–5 arrests.',
+  'Severe impairment. Frequent arrests. >5 hesitations.',
+  'Can barely perform the task.',
+];
+const UPDRS_COLORS = ['#00ffcc','#88ff44','#ffff00','#ff8800','#ff2244'];
+const UPDRS_LABELS = ['NORMAL','MILD','MODERATE','SEVERE','MAX'];
+
+function scoreUPDRS(taps, arrests, durationSec = 10) {
+  const n = taps.length, freq = n / durationSec;
+  let iti_cv = 0;
+  if(n>=3){const ivs=taps.slice(1).map((t,i)=>t.t-taps[i].t),mean=ivs.reduce((a,b)=>a+b,0)/ivs.length,sd=Math.sqrt(ivs.map(x=>(x-mean)**2).reduce((a,b)=>a+b,0)/ivs.length);iti_cv=mean>0?(sd/mean)*100:0;}
+  const maxAmp = n>0 ? Math.max(...taps.map(t=>t.amplitude)) : 0;
+  let fatig = 0;
+  if(n>=6){const avg=arr=>arr.reduce((a,t)=>a+t.amplitude,0)/arr.length,half=Math.floor(n/2);fatig=Math.max(0,(1-avg(taps.slice(-half))/avg(taps.slice(0,half)))*100);}
+  const factors = {
+    freq  : clamp(freq>=5.5?0:freq>=4.0?1:freq>=2.5?2:freq>=1.0?3:4),
+    arrest: clamp(arrests===0?0:arrests<=2?1:arrests<=5?2:arrests<=8?3:4),
+    rhythm: clamp(n>=3?(iti_cv<15?0:iti_cv<30?1:iti_cv<50?2:iti_cv<70?3:4):0),
+    amp   : clamp(n>0?(maxAmp>=0.13?0:maxAmp>=0.09?1:maxAmp>=0.06?2:maxAmp>=0.03?3:4):0),
+    fatig : clamp(n>=6?(fatig<10?0:fatig<25?1:fatig<45?2:fatig<65?3:4):0),
+  };
+  const raw = Object.entries(FACTOR_WEIGHTS).reduce((s,[k,w])=>s+factors[k]*w,0);
+  const score = clamp(Math.round(raw));
+  const confidence = n>=20?'HIGH':n>=10?'MEDIUM':'LOW';
+  return {score, raw, factors, freq, arrests, iti_cv, fatig, maxAmp, n, confidence};
+}
+
+// ═══════════════════════════════════════════
+// SHOW RESULTS  (shared: live + video)
+// ═══════════════════════════════════════════
+function showResults(durationSec = 10, title = 'UPDRS 3.4 — FINGER TAPPING') {
+  const {score,raw,factors,freq,arrests,iti_cv,fatig,maxAmp,n,confidence} = scoreUPDRS(testData.taps, testData.arrests, durationSec);
+  const color = UPDRS_COLORS[score];
+  const el = s => document.getElementById(s);
+
+  el('resultsTitleH2').textContent = title;
+  el('updrsScore').textContent = score;
+  el('updrsScore').style.color = color;
+  el('updrsScore').style.textShadow = `0 0 50px ${color}`;
+  el('updrsLabel').textContent = `UPDRS 3.4 — ${UPDRS_LABELS[score]}`;
+  el('updrsDesc').textContent  = UPDRS_DESC[score];
+  el('resTaps').textContent    = n;
+  el('lblTaps').textContent    = `TAPS / ${durationSec.toFixed(0)}s`;
+  el('resFreq').textContent    = freq.toFixed(1);
+  el('resArrests').textContent = arrests;
+  el('resITI').textContent     = n>=3 ? `${iti_cv.toFixed(0)}%` : '--';
+  el('resMaxAmp').textContent  = n>0 ? `${(maxAmp*100).toFixed(0)}` : '--';
+
+  const fc = fatig<15?'#00ffcc':fatig<35?'#ffff00':'#ff4444';
+  el('resFatig').textContent = n>=6 ? `${fatig.toFixed(0)}%` : '--';
+  el('resFatig').style.color = fc;
+  el('fatigVal').textContent = n>=6 ? `${fatig.toFixed(1)}% decay` : 'need ≥6 taps';
+  el('fatigVal').style.color = fc;
+
+  // Amplitude chart
+  const chartEl = el('ampChart'); chartEl.innerHTML = '';
+  if(testData.taps.length>0){
+    const maxA=Math.max(...testData.taps.map(t=>t.amplitude),0.001);
+    const base3=testData.taps.slice(0,Math.min(3,n)).reduce((a,t)=>a+t.amplitude,0)/Math.min(3,n)||0.001;
+    testData.taps.forEach(tap=>{
+      const pct=(tap.amplitude/maxA)*100, ratio=tap.amplitude/base3;
+      const c=ratio>=0.85?'#00ffcc':ratio>=0.65?'#88ff44':ratio>=0.45?'#ffff00':ratio>=0.25?'#ff8800':'#ff2244';
+      const b=document.createElement('div'); b.className='amp-bar';
+      b.style.cssText=`height:${pct}%;background:${c};box-shadow:0 0 5px ${c};`;
+      chartEl.appendChild(b);
+    });
+  }
+
+  // Factor bars
+  const FC=['#00ffcc','#88ff44','#ffff00','#ff8800','#ff2244'];
+  [['freq',factors.freq],['arrest',factors.arrest],['rhythm',factors.rhythm],['amp',factors.amp],['fatig',factors.fatig]].forEach(([id,fs])=>{
+    const c=FC[Math.min(fs,4)];
+    const b=el(`fb-${id}`); b.style.width=`${(fs/4)*100}%`; b.style.background=c; b.style.boxShadow=`0 0 6px ${c}`;
+    const s=el(`fs-${id}`); s.textContent=`${fs}/4`; s.style.color=c;
+  });
+
+  const confC={HIGH:'#00ffcc',MEDIUM:'#ffff00',LOW:'#ff8800'};
+  const ct=el('confidenceTag'); ct.textContent=`${confidence} CONFIDENCE  (n=${n})`; ct.style.color=confC[confidence]; ct.style.borderColor=confC[confidence];
+
+  el('resultsOverlay').classList.add('visible');
+
+  // Prepare save payload
+  lastResultPayload = {
+    mode: appMode === 'video' ? 'video' : 'live',
+    score, raw_score: parseFloat(raw.toFixed(3)),
+    n_taps: n, frequency: parseFloat(freq.toFixed(2)),
+    arrests, iti_cv: parseFloat(iti_cv.toFixed(1)),
+    max_amplitude: parseFloat(maxAmp.toFixed(4)),
+    fatigability: parseFloat(fatig.toFixed(1)),
+    confidence, duration_sec: parseFloat(durationSec.toFixed(1)),
+    factors,
+  };
+  // Reset save UI
+  const saveBtn = el('saveResultBtn');
+  const saveMsg = el('saveResultMsg');
+  saveBtn.style.display = ''; saveBtn.disabled = false;
+  saveMsg.textContent = ''; saveMsg.style.color = '';
+  if (!currentUser) saveMsg.textContent = '로그인하면 기록이 저장됩니다';
+}
+
+// ═══════════════════════════════════════════
+// FREE PLAY TAP TRIGGER
+// ═══════════════════════════════════════════
+const COMBO_LABELS = {5:'NICE!',8:'HOT!',10:'FIRE! ×10',15:'BLAZING! ×15',20:'GODLIKE! ×20',30:'LEGENDARY! ×30'};
+const COMBO_POOL   = ["SICK!","WOW!","DOPE!","YEAH!","LET'S GO!"];
+
+function triggerTap(x, y, fi) {
+  const color = FINGER_COLORS[fi], now = Date.now();
+
+  // Record in test data (live UPDRS or video)
+  if(testState==='running' || appMode==='video') {
+    const ts = appMode==='video' ? (videoEl.currentTime*1000) : now;
+    const elapsed = ts - testData.lastTapT;
+    if(testData.taps.length>0 && elapsed>ARREST_THRESHOLD) testData.arrests++;
+    testData.taps.push({t:ts, amplitude:testData.currentMaxDist});
+    testData.currentMaxDist = 0;
+    testData.lastTapT = ts;
+    if(testState==='running') { document.getElementById('testTapCount').textContent = testData.taps.length; graphPulse = 1; }
+  }
+
+  combo = (now-lastTapTime<COMBO_WINDOW) ? combo+1 : 1;
+  lastTapTime = now; tapCount++;
+  tapHistory.push(now); if(tapHistory.length>10) tapHistory.shift();
+
+  const sc = Math.min(1+combo*0.18, 3.2);
+  const pc = Math.floor(28*sc);
+  for(let i=0;i<pc;i++) effects.push(new Particle(x,y,color,sc*0.75));
+  effects.push(new Shockwave(x,y,color,0,sc), new GlowPulse(x,y,color), new Burst(x,y,color), new ScreenFlash(color));
+  bgWaves.push(new BgWave(x,y,color));
+  if(combo>=2){effects.push(new Shockwave(x,y,color,6,sc*0.85),new Shockwave(x,y,color,13,sc*0.65),new RingSegment(x,y,color,sc*0.9));}
+  if(combo>=3){effects.push(new Lightning(x,y,color));setTimeout(()=>bgWaves.push(new BgWave(x,y,FINGER_COLORS[(fi+2)%4])),120);}
+  if(combo>=5){
+    const lbl=COMBO_LABELS[combo]||(combo%5===0?`×${combo} `+COMBO_POOL[combo%COMBO_POOL.length]:COMBO_POOL[Math.floor(Math.random()*COMBO_POOL.length)]);
+    effects.push(new FloatingText(x,y-50,lbl,color,Math.min(20+Math.floor(combo*0.8),44)),new RingSegment(x,y,color,sc));
+    for(let i=0;i<Math.min(Math.floor(combo/5),3);i++){const c2=FINGER_COLORS[(fi+i+1)%4];setTimeout(()=>effects.push(new Lightning(x,y,c2)),i*70);}
+  }
+  if(tapCount%10===0){FINGER_COLORS.forEach((c,i)=>setTimeout(()=>{effects.push(new Lightning(x,y,c),new Shockwave(x,y,c,0,1.5));},i*60));effects.push(new FloatingText(x,y-80,`${tapCount} TAPS`,'#fff',28));}
+  playTap(FINGER_FREQS[fi], combo);
+  if(appMode==='free') updateFreeHUD();
+}
+
+// ═══════════════════════════════════════════
+// FREE PLAY HUD
+// ═══════════════════════════════════════════
+let comboResetTimer = null;
+function updateFreeHUD() {
+  document.getElementById('tapCount').textContent = tapCount;
+  document.getElementById('comboNum').textContent = combo;
+  if(tapHistory.length>=3){const r=tapHistory.slice(-6);document.getElementById('bpm').textContent=Math.min(Math.round((r.length-1)/(r[r.length-1]-r[0])*60000),999);}
+  const d=document.getElementById('comboDisplay');
+  if(combo>=3){d.textContent=`×${combo}`;const ci=Math.min(Math.floor((combo-3)/3),3);d.style.color=FINGER_COLORS[ci];d.style.textShadow=`0 0 24px ${FINGER_COLORS[ci]}`;}
+  else d.textContent='';
+  clearTimeout(comboResetTimer);
+  comboResetTimer=setTimeout(()=>{combo=0;document.getElementById('comboNum').textContent=0;document.getElementById('comboDisplay').textContent='';tapHistory=[];document.getElementById('bpm').textContent='--';},COMBO_WINDOW);
+}
+
+// ═══════════════════════════════════════════
+// MODE MANAGEMENT
+// ═══════════════════════════════════════════
+function setMode(mode) {
+  appMode = mode;
+  document.getElementById('btnFree').classList.toggle('active', mode==='free');
+  document.getElementById('btnUpdrs').classList.toggle('active', mode==='updrs');
+  document.getElementById('btnVideo').classList.toggle('active', mode==='video');
+  const dim = mode !== 'free';
+  document.getElementById('hud').style.opacity    = dim ? '0.25' : '1';
+  document.getElementById('legend').style.opacity = dim ? '0.25' : '1';
+
+  document.getElementById('updrsTestOverlay').classList.toggle('hidden', mode!=='updrs');
+  document.getElementById('videoDropOverlay').classList.toggle('hidden',  mode!=='video');
+
+  if(mode!=='updrs') { testState='idle'; document.getElementById('testHud').classList.remove('visible'); document.getElementById('countdown').classList.remove('visible'); }
+  if(mode!=='video') { document.getElementById('videoProgressOverlay').classList.add('hidden'); }
+  document.getElementById('resultsOverlay').classList.remove('visible');
+}
+
+// ═══════════════════════════════════════════
+// UPDRS LIVE TEST FLOW
+// ═══════════════════════════════════════════
+function startCountdown() {
+  document.getElementById('updrsTestOverlay').classList.add('hidden');
+  const cdEl=document.getElementById('countdown'), numEl=document.getElementById('countdownNum');
+  const colors=['#ff4444','#ffaa00','#00ffcc']; let count=3;
+  const tick=()=>{
+    if(count===0){numEl.textContent='GO!';numEl.style.color='#00ffcc';numEl.style.animation='none';numEl.offsetHeight;numEl.style.animation='cpulse 0.75s ease-out';setTimeout(()=>{cdEl.classList.remove('visible');startTest();},650);return;}
+    numEl.textContent=count;numEl.style.color=colors[3-count];numEl.style.animation='none';numEl.offsetHeight;numEl.style.animation='cpulse 0.75s ease-out';
+    cdEl.classList.add('visible'); count--; setTimeout(tick,900);
+  };
+  tick();
+}
+function startTest() {
+  testState='running';
+  Object.assign(testData,{taps:[],arrests:0,startTime:Date.now(),lastTapT:Date.now(),currentMaxDist:0});
+  document.getElementById('testHud').classList.add('visible');
+  document.getElementById('testTapCount').textContent='0';
+  setTimeout(endTest, TEST_DURATION);
+}
+function endTest() {
+  if(testState!=='running') return;
+  testState='done';
+  document.getElementById('testHud').classList.remove('visible');
+  showResults(10, 'UPDRS 3.4 — LIVE TEST');
+}
+function updateTimerRing() {
+  if(testState!=='running') return;
+  const elapsed=Date.now()-testData.startTime, remaining=Math.max(0,(TEST_DURATION-elapsed)/1000);
+  const offset=CIRCUMFERENCE*Math.min(elapsed/TEST_DURATION,1);
+  const color=remaining<=3?'#ff4444':remaining<=5?'#ffaa00':'#00ffcc';
+  const ring=document.getElementById('timerRing'), txt=document.getElementById('timerText');
+  ring.style.strokeDashoffset=offset; ring.style.stroke=color;
+  txt.textContent=Math.ceil(remaining); txt.style.color=color;
+}
+
+// ═══════════════════════════════════════════
+// VIDEO ANALYSIS
+// ═══════════════════════════════════════════
+const videoEl = document.createElement('video');
+videoEl.muted=true; videoEl.preload='auto'; videoEl.playsInline=true;
+videoEl.style.cssText='position:fixed;left:-9999px;top:-9999px;opacity:0;pointer-events:none;';
+document.body.appendChild(videoEl);
+
+async function analyzeVideoFile(file) {
+  // Reset
+  Object.assign(testData,{taps:[],arrests:0,startTime:0,lastTapT:0,currentMaxDist:0});
+  const keys = Object.keys(prevTap).filter(k=>k.startsWith('vid-'));
+  keys.forEach(k=>delete prevTap[k]);
+
+  document.getElementById('videoDropOverlay').classList.add('hidden');
+  document.getElementById('videoProgressOverlay').classList.remove('hidden');
+  document.getElementById('vpFileName').textContent = file.name;
+  document.getElementById('vpProgress').style.width = '0%';
+  document.getElementById('video').style.visibility = 'hidden'; // hide live camera
+
+  const url = URL.createObjectURL(file);
+  videoEl.src = url;
+  await new Promise(r=>videoEl.addEventListener('loadedmetadata',r,{once:true}));
+
+  // Seek to t=0 so first frame is decoded — guarantees videoWidth/videoHeight are final
+  videoEl.currentTime = 0;
+  await new Promise(r=>videoEl.addEventListener('seeked',r,{once:true}));
+
+  const duration = videoEl.duration;
+  videoAnalysisDuration = duration;
+
+  // Compute letterbox using confirmed dimensions (never upscale beyond native)
+  const vNatW = videoEl.videoWidth;
+  const vNatH = videoEl.videoHeight;
+  const vScale = (vNatW > 0 && vNatH > 0)
+    ? Math.min(1, canvas.width / vNatW, canvas.height / vNatH)
+    : 1;
+  vLB = { x:(canvas.width - vNatW*vScale)/2, y:(canvas.height - vNatH*vScale)/2, w:vNatW*vScale, h:vNatH*vScale };
+
+  // Show detected resolution + rendered size for diagnosis
+  document.getElementById('vpFileName').textContent =
+    `${file.name}  [원본 ${vNatW}×${vNatH} → 표시 ${Math.round(vLB.w)}×${Math.round(vLB.h)}]`;
+  const STEP = 1/15; // 15fps analysis
+  const total = Math.ceil(duration/STEP);
+  let frame = 0;
+  const FRAME_TARGET_MS = STEP * 1000; // pace to real-time regardless of machine speed
+
+  testData.lastTapT = 0;
+
+  for(let t=0; t<=duration; t+=STEP) {
+    const frameStart = performance.now();
+    if (t > 0) { // t=0 already seeked during letterbox setup
+      videoEl.currentTime = t;
+      await new Promise(r=>videoEl.addEventListener('seeked',r,{once:true}));
+    }
+
+    // Draw video frame: black bg + letterbox (no stretch, no live camera bleed)
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(videoEl, vLB.x, vLB.y, vLB.w, vLB.h);
+
+    // Process through MediaPipe and wait for result
+    await new Promise(resolve=>{
+      pendingResolve = resolve;
+      hands.send({image:videoEl});
+    });
+
+    // Tap detection with video timestamp
+    if(handResults && handResults.multiHandLandmarks) {
+      handResults.multiHandLandmarks.forEach((lm,hi)=>detectTapsVideo(lm,hi,t*1000));
+    }
+
+    // Draw hand skeleton overlay (no mirror, letterbox coords)
+    if(handResults && handResults.multiHandLandmarks) {
+      const vOpts = { ox:vLB.x, oy:vLB.y, sw:vLB.w, sh:vLB.h, mirror:false };
+      handResults.multiHandLandmarks.forEach((lm)=>drawHand(lm,[false,false,false,false],vOpts));
+    }
+
+    // Render effects on this frame
+    const W=canvas.width, H=canvas.height;
+    bgWaves = bgWaves.filter(w=>{w.update();w.draw(ctx);return !w.isDead();});
+    const flashes=[],rest=[];
+    effects.forEach(e=>(e instanceof ScreenFlash?flashes:rest).push(e));
+    rest.forEach(e=>{if(e.update)e.update();if(e.draw)e.draw(ctx);});
+    effects=[...rest.filter(e=>!e.isDead()),...flashes];
+    effects=effects.filter(e=>{if(!(e instanceof ScreenFlash))return true;e.update();e.draw(ctx,W,H);return !e.isDead();});
+
+    frame++;
+    const pct = frame/total;
+    document.getElementById('vpProgress').style.width = `${pct*100}%`;
+    document.getElementById('vpTime').textContent = `${t.toFixed(1)}s / ${duration.toFixed(1)}s`;
+    document.getElementById('vpTaps').textContent = `${testData.taps.length} taps`;
+
+    // Adaptive pacing: wait only what's left of the target frame interval
+    const pad = FRAME_TARGET_MS - (performance.now() - frameStart);
+    if (pad > 2) await new Promise(r => setTimeout(r, pad));
+  }
+
+  URL.revokeObjectURL(url);
+  document.getElementById('video').style.visibility = ''; // restore live camera
+  document.getElementById('videoProgressOverlay').classList.add('hidden');
+  showResults(duration, `VIDEO ANALYSIS — ${file.name.split('.')[0]}`);
+}
+
+function detectTapsVideo(landmarks, handIdx, timestampMs) {
+  const thumb=landmarks[THUMB_TIP];
+  getTrail(handIdx,'t').add(vLB.x + thumb.x*vLB.w, vLB.y + thumb.y*vLB.h);
+
+  FINGER_TIPS.forEach((tipIdx,fi)=>{
+    const tip=landmarks[tipIdx];
+    const x=vLB.x + tip.x*vLB.w, y=vLB.y + tip.y*vLB.h;
+    getTrail(handIdx,fi).add(x,y);
+    const dx=thumb.x-tip.x, dy=thumb.y-tip.y;
+    const dist=Math.sqrt(dx*dx+dy*dy);
+    if(fi===0) testData.currentMaxDist=Math.max(testData.currentMaxDist,dist);
+    const isTap=dist<TAP_THRESH;
+    const key=`vid-${handIdx}-${fi}`;
+    const wasT=prevTap[key]||false;
+    const lastMs=lastTapMs[key]||0;
+    if(isTap&&!wasT&&(timestampMs-lastMs)>TAP_COOLDOWN){
+      // Effects at tap location (visible during analysis)
+      effects.push(new GlowPulse(x,y,FINGER_COLORS[fi]));
+      effects.push(new Shockwave(x,y,FINGER_COLORS[fi],0,1));
+      bgWaves.push(new BgWave(x,y,FINGER_COLORS[fi]));
+      // Record tap
+      const elapsed=timestampMs-testData.lastTapT;
+      if(testData.taps.length>0&&elapsed>ARREST_THRESHOLD) testData.arrests++;
+      testData.taps.push({t:timestampMs, amplitude:testData.currentMaxDist});
+      testData.currentMaxDist=0;
+      testData.lastTapT=timestampMs;
+      lastTapMs[key]=timestampMs;
+    }
+    prevTap[key]=isTap;
+  });
+}
+
+// ═══════════════════════════════════════════
+// TAP DETECTION (live camera)
+// ═══════════════════════════════════════════
+function detectTaps(landmarks, handIdx) {
+  const W=canvas.width, H=canvas.height;
+  const thumb=landmarks[THUMB_TIP], now=Date.now();
+  const active=[false,false,false,false];
+  getTrail(handIdx,'t').add((1-thumb.x)*W, thumb.y*H);
+
+  FINGER_TIPS.forEach((tipIdx,fi)=>{
+    const tip=landmarks[tipIdx];
+    const x=(1-tip.x)*W, y=tip.y*H;
+    getTrail(handIdx,fi).add(x,y);
+    const dx=thumb.x-tip.x, dy=thumb.y-tip.y;
+    const dist=Math.sqrt(dx*dx+dy*dy);
+    if(fi===0&&testState==='running') testData.currentMaxDist=Math.max(testData.currentMaxDist,dist);
+    const isTap=dist<TAP_THRESH;
+    const key=`${handIdx}-${fi}`;
+    const wasT=prevTap[key]||false, lastMs=lastTapMs[key]||0;
+    if(isTap&&!wasT&&(now-lastMs)>TAP_COOLDOWN){triggerTap(x,y,fi);lastTapMs[key]=now;}
+    prevTap[key]=isTap; active[fi]=isTap;
+  });
+  return active;
+}
+
+// ═══════════════════════════════════════════
+// HAND SKELETON
+// ═══════════════════════════════════════════
+function drawHand(landmarks, activeFingers, opts = {}) {
+  const W = canvas.width, H = canvas.height;
+  const { ox=0, oy=0, sw=W, sh=H, mirror=true } = opts;
+  const lx = lm => ox + (mirror ? (1-lm.x) : lm.x) * sw;
+  const ly = lm => oy + lm.y * sh;
+  ctx.save(); ctx.strokeStyle='rgba(255,255,255,0.18)'; ctx.lineWidth=1.5;
+  CONNECTIONS.forEach(([a,b])=>{const pa=landmarks[a],pb=landmarks[b];ctx.beginPath();ctx.moveTo(lx(pa),ly(pa));ctx.lineTo(lx(pb),ly(pb));ctx.stroke();});
+  ctx.restore();
+  landmarks.forEach((lm,i)=>{
+    const x=lx(lm), y=ly(lm), fi=FINGER_TIPS.indexOf(i);
+    ctx.save();
+    if(fi>=0){const hit=activeFingers[fi];ctx.shadowBlur=hit?30:9;ctx.shadowColor=FINGER_COLORS[fi];ctx.fillStyle=FINGER_COLORS[fi];ctx.beginPath();ctx.arc(x,y,hit?8:4.5,0,Math.PI*2);ctx.fill();if(hit){ctx.globalAlpha=0.35;ctx.beginPath();ctx.arc(x,y,14,0,Math.PI*2);ctx.fill();}}
+    else if(i===THUMB_TIP){ctx.shadowBlur=10;ctx.shadowColor='#fff';ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(x,y,5.5,0,Math.PI*2);ctx.fill();}
+    else{ctx.fillStyle='rgba(255,255,255,0.42)';ctx.beginPath();ctx.arc(x,y,2.5,0,Math.PI*2);ctx.fill();}
+    ctx.restore();
+  });
+}
+
+// ═══════════════════════════════════════════
+// MAIN RENDER LOOP  (live camera only)
+// ═══════════════════════════════════════════
+const video  = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const ctx    = canvas.getContext('2d');
+
+function resize() { canvas.width=window.innerWidth; canvas.height=window.innerHeight; }
+window.addEventListener('resize',resize); resize();
+
+function frame() {
+  // Skip live rendering during video analysis
+  if(appMode==='video' && document.getElementById('videoProgressOverlay').style.display!=='none') {
+    requestAnimationFrame(frame); return;
+  }
+
+  const W=canvas.width, H=canvas.height;
+  ctx.clearRect(0,0,W,H);
+  bgWaves=bgWaves.filter(w=>{w.update();w.draw(ctx);return !w.isDead();});
+  Object.values(trails).forEach(t=>t.draw(ctx));
+
+  if(handResults && handResults.multiHandLandmarks && appMode!=='video') {
+    handResults.multiHandLandmarks.forEach((lm,hi)=>{
+      const active=detectTaps(lm,hi); drawHand(lm,active);
+    });
+  }
+
+  const flashes=[],rest=[];
+  effects.forEach(e=>(e instanceof ScreenFlash?flashes:rest).push(e));
+  rest.forEach(e=>{if(e.update)e.update();if(e.draw)e.draw(ctx);});
+  effects=[...rest.filter(e=>!e.isDead()),...flashes];
+  effects=effects.filter(e=>{if(!(e instanceof ScreenFlash))return true;e.update();e.draw(ctx,W,H);return !e.isDead();});
+
+  updateTimerRing();
+  if (graphPulse > 0) graphPulse = Math.max(0, graphPulse - 0.045);
+  if (testState === 'running') drawLiveGraph(W, H);
+
+  requestAnimationFrame(frame);
+}
+
+// ═══════════════════════════════════════════
+// MEDIAPIPE
+// ═══════════════════════════════════════════
+let hands, camera;
+try {
+  hands = new Hands({locateFile:f=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
+  hands.setOptions({maxNumHands:2, modelComplexity:1, minDetectionConfidence:0.72, minTrackingConfidence:0.55});
+  hands.onResults(r=>{
+    handResults = r;
+    if(pendingResolve) { pendingResolve(); pendingResolve=null; }
+  });
+  camera = new Camera(video,{
+    onFrame: async()=>{ if(appMode!=='video') await hands.send({image:video}); },
+    width:1280, height:720,
+  });
+} catch(e) {
+  console.error('MediaPipe init failed:', e);
+  camera = { start: ()=>Promise.resolve(), stop:()=>{} };
+}
+
+// ═══════════════════════════════════════════
+// EVENT LISTENERS
+// ═══════════════════════════════════════════
+const $=s=>document.getElementById(s);
+
+$('startBtn').addEventListener('click', ()=>{
+  try { initAudio(); } catch(e) {}
+  try { camera.start().catch(()=>{}); } catch(e) {}
+  resize();
+  requestAnimationFrame(frame);
+  $('startOverlay').classList.add('hidden');
+  if (!currentUser) {
+    $('landingOverlay').classList.remove('hidden');
+  }
+});
+
+// Landing CTA buttons
+$('landSignupBtn').addEventListener('click', () => openAuth('signup'));
+$('landLoginBtn').addEventListener('click',  () => openAuth('login'));
+$('landGuestBtn').addEventListener('click',  () => continueAsGuest());
+
+// Profile badge click → toggle menu
+$('profileBadge').addEventListener('click', e => {
+  e.stopPropagation();
+  $('profileMenu').classList.toggle('open');
+});
+document.addEventListener('click', () => $('profileMenu').classList.remove('open'));
+
+$('btnFree').addEventListener('click',  ()=>setMode('free'));
+$('btnUpdrs').addEventListener('click', ()=>setMode('updrs'));
+$('btnVideo').addEventListener('click', ()=>setMode('video'));
+
+$('testStartBtn').addEventListener('click', startCountdown);
+
+$('testRetryBtn').addEventListener('click',()=>{
+  $('resultsOverlay').classList.remove('visible');
+  if(appMode==='updrs'){ testState='idle'; $('updrsTestOverlay').classList.remove('hidden'); }
+  else if(appMode==='video'){ $('videoDropOverlay').classList.remove('hidden'); }
+});
+$('testDoneBtn').addEventListener('click',()=>setMode('free'));
+
+// Video file input
+const dropZone = $('dropZone'), fileInput = $('videoFileInput');
+
+dropZone.addEventListener('click', ()=>fileInput.click());
+fileInput.addEventListener('change', e=>{ if(e.target.files[0]) analyzeVideoFile(e.target.files[0]); });
+
+dropZone.addEventListener('dragover', e=>{ e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', ()=>dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e=>{
+  e.preventDefault(); dropZone.classList.remove('drag-over');
+  const f=e.dataTransfer.files[0];
+  if(f && f.type.startsWith('video/')) analyzeVideoFile(f);
+});
+</script>
+</body>
+</html>
