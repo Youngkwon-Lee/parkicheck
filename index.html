@@ -1016,7 +1016,7 @@ function triggerTap(x, y, fi) {
   }
   if(tapCount%10===0){FINGER_COLORS.forEach((c,i)=>setTimeout(()=>{effects.push(new Lightning(x,y,c),new Shockwave(x,y,c,0,1.5));},i*60));effects.push(new FloatingText(x,y-80,`${tapCount} TAPS`,'#fff',28));}
   playTap(FINGER_FREQS[fi], combo);
-  if(appMode==='free') updateFreeHUD();
+  if(appMode!=='video') updateFreeHUD();
 }
 
 // ═══════════════════════════════════════════
@@ -1042,9 +1042,9 @@ function setMode(mode) {
   document.getElementById('btnFree').classList.toggle('active', mode==='free');
   document.getElementById('btnUpdrs').classList.toggle('active', mode==='updrs');
   document.getElementById('btnVideo').classList.toggle('active', mode==='video');
-  const dim = mode !== 'free';
-  document.getElementById('hud').style.opacity    = dim ? '0.25' : '1';
-  document.getElementById('legend').style.opacity = dim ? '0.25' : '1';
+  const dim = mode === 'video';
+  document.getElementById('hud').style.opacity    = dim ? '0.15' : '1';
+  document.getElementById('legend').style.opacity = dim ? '0.15' : '1';
 
   document.getElementById('updrsTestOverlay').classList.toggle('hidden', mode!=='updrs');
   document.getElementById('videoDropOverlay').classList.toggle('hidden',  mode!=='video');
