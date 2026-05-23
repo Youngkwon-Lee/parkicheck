@@ -541,23 +541,21 @@ supa.auth.onAuthStateChange((_e, session) => {
   updateAuthUI();
 });
 
-// On load: check session and show appropriate screen immediately
+// On load: check session — logged in → assessSelector, else → auth modal
 supa.auth.getSession().then(({ data }) => {
-  const lo = document.getElementById('landingOverlay');
-  const so = document.getElementById('startOverlay');
+  document.getElementById('startOverlay').classList.add('hidden');
   if (data.session) {
     currentUser = data.session.user;
     updateAuthUI();
-    so.classList.add('hidden');
     document.getElementById('assessSelector').classList.remove('hidden');
   } else {
-    so.classList.add('hidden');
-    lo.classList.remove('hidden');
+    switchAuthTab('login');
+    document.getElementById('authOverlay').classList.remove('hidden');
   }
 }).catch(() => {
-  // Supabase unavailable — show landing anyway
   document.getElementById('startOverlay').classList.add('hidden');
-  document.getElementById('landingOverlay').classList.remove('hidden');
+  switchAuthTab('login');
+  document.getElementById('authOverlay').classList.remove('hidden');
 });
 
 function updateAuthUI() {
@@ -633,11 +631,12 @@ async function doSignup() {
 async function doSignOut() {
   await supa.auth.signOut();
   document.getElementById('profileMenu').classList.remove('open');
-  // Stop camera, go back to landing
   cameraStarted = false;
   try { camera.stop(); } catch(e) {}
-  document.getElementById('landingOverlay').classList.remove('hidden');
   document.getElementById('assessSelector').classList.add('hidden');
+  document.getElementById('resultsOverlay').classList.remove('visible');
+  switchAuthTab('login');
+  document.getElementById('authOverlay').classList.remove('hidden');
 }
 
 function continueAsGuest() {
