@@ -133,7 +133,7 @@
     .hidden * { pointer-events:none !important; }
 
     /* ── Landing ── */
-    #landingOverlay { position:absolute; inset:0; z-index:90; overflow-y:auto; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:48px 24px; transition:opacity 0.6s; }
+    #landingOverlay { position:absolute; inset:0; z-index:105; overflow-y:auto; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:48px 24px; transition:opacity 0.6s; }
     #landingOverlay::before { content:''; position:fixed; inset:0; background:radial-gradient(ellipse 80% 60% at 50% 20%, rgba(0,80,60,0.18) 0%, transparent 70%), radial-gradient(ellipse 60% 40% at 70% 80%, rgba(80,0,120,0.12) 0%, transparent 60%), #03030a; z-index:-1; }
     .land-eyebrow { display:flex; align-items:center; gap:8px; margin-bottom:20px; }
     .land-eyebrow-dot { width:6px; height:6px; border-radius:50%; background:var(--accent); box-shadow:0 0 8px var(--accent); }
@@ -185,7 +185,7 @@
     .pmenu-item.danger { color:#ff6666; }
 
     /* ── Assessment Selector ── */
-    #assessSelector { position:absolute; inset:0; z-index:95; background:rgba(3,3,10,0.92); backdrop-filter:blur(16px); display:flex; flex-direction:column; align-items:center; justify-content:center; padding:32px 24px; transition:opacity 0.4s; }
+    #assessSelector { position:absolute; inset:0; z-index:104; background:rgba(3,3,10,0.92); backdrop-filter:blur(16px); display:flex; flex-direction:column; align-items:center; justify-content:center; padding:32px 24px; transition:opacity 0.4s; }
     .assess-title { font-size:0.62rem; letter-spacing:5px; color:rgba(255,255,255,0.3); margin-bottom:28px; }
     .assess-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; max-width:520px; width:100%; }
     .assess-card { background:rgba(10,12,24,0.9); border:1px solid rgba(255,255,255,0.07); border-radius:16px; padding:22px 20px; cursor:pointer; transition:all 0.22s; display:flex; flex-direction:column; gap:6px; position:relative; overflow:hidden; }
@@ -520,11 +520,31 @@ try {
 }
 
 let currentUser = null;
-let lastResultPayload = null; // holds latest test result for deferred save
+let lastResultPayload = null;
+let cameraStarted = false;
 
 supa.auth.onAuthStateChange((_e, session) => {
   currentUser = session?.user ?? null;
   updateAuthUI();
+});
+
+// On load: check session and show appropriate screen immediately
+supa.auth.getSession().then(({ data }) => {
+  const lo = document.getElementById('landingOverlay');
+  const so = document.getElementById('startOverlay');
+  if (data.session) {
+    currentUser = data.session.user;
+    updateAuthUI();
+    so.classList.add('hidden');
+    document.getElementById('assessSelector').classList.remove('hidden');
+  } else {
+    so.classList.add('hidden');
+    lo.classList.remove('hidden');
+  }
+}).catch(() => {
+  // Supabase unavailable — show landing anyway
+  document.getElementById('startOverlay').classList.add('hidden');
+  document.getElementById('landingOverlay').classList.remove('hidden');
 });
 
 function updateAuthUI() {
@@ -549,6 +569,14 @@ function openAuth(tab='login') {
   document.getElementById('authOverlay').classList.remove('hidden');
 }
 
+function showAssessSelector() {
+  document.getElementById('authOverlay').classList.add('hidden');
+  document.getElementById('landingOverlay').classList.add('hidden');
+  document.getElementById('startOverlay').classList.add('hidden');
+  document.getElementById('assessSelector').classList.remove('hidden');
+  if (lastResultPayload) { saveResultToDb(lastResultPayload); lastResultPayload = null; }
+}
+
 async function doLogin() {
   const email = document.getElementById('loginEmail').value.trim();
   const pw    = document.getElementById('loginPw').value;
@@ -558,9 +586,7 @@ async function doLogin() {
   const { error } = await supa.auth.signInWithPassword({ email, password: pw });
   document.getElementById('loginBtn').textContent = 'LOGIN';
   if (error) { errEl.textContent = error.message; return; }
-  document.getElementById('authOverlay').classList.add('hidden');
-  document.getElementById('landingOverlay').classList.add('hidden');
-  if (lastResultPayload) { saveResultToDb(lastResultPayload); lastResultPayload = null; }
+  showAssessSelector();
 }
 
 async function doSignup() {
@@ -574,11 +600,8 @@ async function doSignup() {
   const { data, error } = await supa.auth.signUp({ email, password: pw });
   document.getElementById('signupBtn').textContent = 'CREATE ACCOUNT';
   if (error) { errEl.textContent = error.message; return; }
-  // auto-confirm ON → session returned immediately
   if (data.session) {
-    document.getElementById('authOverlay').classList.add('hidden');
-    document.getElementById('landingOverlay').classList.add('hidden');
-    if (lastResultPayload) { saveResultToDb(lastResultPayload); lastResultPayload = null; }
+    showAssessSelector();
   } else {
     errEl.style.color = '#00ffcc';
     errEl.textContent = '가입 완료! 이메일을 확인해 인증 후 로그인하세요.';
@@ -588,12 +611,15 @@ async function doSignup() {
 async function doSignOut() {
   await supa.auth.signOut();
   document.getElementById('profileMenu').classList.remove('open');
+  // Stop camera, go back to landing
+  cameraStarted = false;
+  try { camera.stop(); } catch(e) {}
   document.getElementById('landingOverlay').classList.remove('hidden');
+  document.getElementById('assessSelector').classList.add('hidden');
 }
 
 function continueAsGuest() {
-  document.getElementById('authOverlay').classList.add('hidden');
-  document.getElementById('landingOverlay').classList.add('hidden');
+  showAssessSelector();
 }
 
 // ── Save result ─────────────────────────────
@@ -797,9 +823,9 @@ class ImplodeRing {
 
 // ── 3.6 Pronation-Supination effects ────────
 class SpinSpoke {
-  constructor(x,y,angle,delay){this.x=x;this.y=y;this.angle=angle;this.len=55+Math.random()*60;this.life=1;this.timer=delay;}
-  update(){if(this.timer>0){this.timer--;return;}this.life-=0.045;}
-  draw(ctx){if(this.timer>0||this.life<=0)return;const ex=this.x+Math.cos(this.angle)*this.len,ey=this.y+Math.sin(this.angle)*this.len;ctx.save();ctx.globalAlpha=this.life*0.9;ctx.strokeStyle='#ff8800';ctx.lineWidth=3*this.life+0.5;ctx.shadowBlur=18;ctx.shadowColor='#ff8800';ctx.beginPath();ctx.moveTo(this.x,this.y);ctx.lineTo(ex,ey);ctx.stroke();ctx.fillStyle='#ffbb44';ctx.globalAlpha=this.life;ctx.beginPath();ctx.arc(ex,ey,4*this.life,0,Math.PI*2);ctx.fill();ctx.restore();}
+  constructor(x,y,angle,delay,scale=1){this.x=x;this.y=y;this.angle=angle;this.len=(70+Math.random()*90)*scale;this.life=1;this.timer=delay;this.color=Math.random()>0.4?'#ff8800':'#ffbb44';}
+  update(){if(this.timer>0){this.timer--;return;}this.life-=0.04;}
+  draw(ctx){if(this.timer>0||this.life<=0)return;const ex=this.x+Math.cos(this.angle)*this.len*this.life*0.7+Math.cos(this.angle)*this.len*0.3,ey=this.y+Math.sin(this.angle)*this.len*this.life*0.7+Math.sin(this.angle)*this.len*0.3;ctx.save();ctx.globalAlpha=this.life*0.95;ctx.strokeStyle=this.color;ctx.lineWidth=3.5*this.life+0.5;ctx.shadowBlur=22;ctx.shadowColor=this.color;ctx.beginPath();ctx.moveTo(this.x,this.y);ctx.lineTo(ex,ey);ctx.stroke();ctx.fillStyle='#fff';ctx.globalAlpha=this.life*0.8;ctx.beginPath();ctx.arc(ex,ey,3.5*this.life,0,Math.PI*2);ctx.fill();ctx.restore();}
   isDead(){return this.life<=0;}
 }
 class SpinRing {
@@ -1147,10 +1173,17 @@ function triggerHandClose(x, y) {
 // 3.6 PRONATION-SUPINATION TRIGGER
 // ═══════════════════════════════════════════
 function triggerFlip(x, y, flipAmp) {
-  const n=8;
-  for(let i=0;i<n;i++) effects.push(new SpinSpoke(x,y,(i/n)*Math.PI*2,i*2));
-  effects.push(new SpinRing(x,y,1), new SpinRing(x,y,1.4), new ScreenFlash('#ff8800'));
-  bgWaves.push(new BgWave(x,y,'#ff8800'));
+  const sc = 1 + flipAmp * 0.8;
+  // 16 primary spokes
+  for(let i=0;i<16;i++) effects.push(new SpinSpoke(x,y,(i/16)*Math.PI*2,i*1,sc));
+  // 8 secondary shorter spokes (offset)
+  for(let i=0;i<8;i++)  effects.push(new SpinSpoke(x,y,(i/8)*Math.PI*2+Math.PI/16,i*2+8,sc*0.6));
+  // 3 expanding rings of different sizes
+  effects.push(new SpinRing(x,y,sc*1.4), new SpinRing(x,y,sc*0.9), new SpinRing(x,y,sc*0.5));
+  // Particles burst
+  for(let i=0;i<20;i++) effects.push(new Particle(x,y,i%3===0?'#ffbb44':'#ff8800',sc*0.9));
+  effects.push(new ScreenFlash('#ff8800'), new GlowPulse(x,y,'#ff8800'));
+  bgWaves.push(new BgWave(x,y,'#ff8800'), new BgWave(x,y,'#ffbb44'));
   if(testState==='running'){
     const now=Date.now();
     const elapsed=now-testData.lastTapT;
@@ -1216,12 +1249,23 @@ function selectAssessment(type) {
   testType = type;
   const m = ASSESS_META[type];
   document.getElementById('assessSelector').classList.add('hidden');
+
+  // Start camera + render loop on first assessment selection
+  if (!cameraStarted) {
+    cameraStarted = true;
+    try { initAudio(); } catch(e) {}
+    try { camera.start().catch(()=>{}); } catch(e) {}
+    resize();
+    requestAnimationFrame(frame);
+  }
+
   const ol = document.getElementById('updrsTestOverlay');
   ol.querySelector('.ov-h2').textContent = `UPDRS ${m.num}`;
   ol.querySelector('.ov-sub').textContent = m.name;
   ol.querySelector('.ov-p').innerHTML = m.desc.replace(/\n/g,'<br>');
   ol.querySelector('.ov-h2').style.color = m.color;
   ol.classList.remove('hidden');
+  appMode = 'updrs';
 }
 
 // ═══════════════════════════════════════════
@@ -1432,9 +1476,7 @@ function detectTaps(landmarks, handIdx) {
 // ═══════════════════════════════════════════
 // 3.5 HAND MOVEMENTS DETECTION
 // ═══════════════════════════════════════════
-const HAND_OPEN_THRESH  = 0.14; // avg fingertip-palm dist → open
-const HAND_CLOSE_THRESH = 0.07;
-const HAND_COOLDOWN     = 250;
+const HAND_COOLDOWN = 280;
 
 function detectHandMovements(landmarks, handIdx) {
   const W=canvas.width, H=canvas.height;
@@ -1445,21 +1487,25 @@ function detectHandMovements(landmarks, handIdx) {
   // Hand size ref (wrist→MCP9)
   const wrist=landmarks[0], mcp9=landmarks[9];
   const hs=Math.sqrt((wrist.x-mcp9.x)**2+(wrist.y-mcp9.y)**2);
-  if(testState==='running'&&hs>0.05)
-    testData.handSizeRef=testData.handSizeRef?testData.handSizeRef*0.9+hs*0.1:hs;
+  if(hs>0.05) testData.handSizeRef=testData.handSizeRef?testData.handSizeRef*0.9+hs*0.1:hs;
+  const ref=testData.handSizeRef||0.18;
 
-  // Average distance: palm center → 4 fingertips (normalized by hand size)
+  // Per-finger normalized distance from palm
   const tips=[8,12,16,20].map(i=>landmarks[i]);
-  const rawDist=tips.reduce((a,t)=>a+Math.sqrt((t.x-palm.x)**2+(t.y-palm.y)**2),0)/4;
-  const normDist=testData.handSizeRef>0?rawDist/testData.handSizeRef:rawDist/0.18;
+  const normDists=tips.map(t=>Math.sqrt((t.x-palm.x)**2+(t.y-palm.y)**2)/ref);
+  const avgDist=normDists.reduce((a,b)=>a+b,0)/4;
+
+  // Require ALL 4 fingers extended for open, ALL 4 close for closed
+  const OPEN_T=0.72, CLOSE_T=0.50;
+  const isOpen   = normDists.every(d=>d>OPEN_T);
+  const isClosed = normDists.every(d=>d<CLOSE_T);
 
   const key=`hm-${handIdx}`, now=Date.now();
   const wasOpen=prevHandOpen[key]||false;
-  const isOpen=normDist>HAND_OPEN_THRESH/0.18, isClosed=normDist<HAND_CLOSE_THRESH/0.18;
-  if(testState==='running') testData.currentMaxDist=Math.max(testData.currentMaxDist,normDist);
+  if(testState==='running') testData.currentMaxDist=Math.max(testData.currentMaxDist,avgDist);
 
   if(isOpen&&!wasOpen&&(now-(handCycleMs[key]||0))>HAND_COOLDOWN){
-    triggerHandOpen(palmX,palmY,testData.currentMaxDist||normDist);
+    triggerHandOpen(palmX,palmY,testData.currentMaxDist||avgDist);
     testData.currentMaxDist=0; handCycleMs[key]=now;
   }
   if(isClosed&&wasOpen) triggerHandClose(palmX,palmY);
@@ -1593,15 +1639,10 @@ try {
 // ═══════════════════════════════════════════
 const $=s=>document.getElementById(s);
 
+// startBtn is now a fallback (getSession handles auto-show on load)
 $('startBtn').addEventListener('click', ()=>{
-  try { initAudio(); } catch(e) {}
-  try { camera.start().catch(()=>{}); } catch(e) {}
-  resize();
-  requestAnimationFrame(frame);
   $('startOverlay').classList.add('hidden');
-  if (!currentUser) {
-    $('landingOverlay').classList.remove('hidden');
-  }
+  $('landingOverlay').classList.remove('hidden');
 });
 
 // Landing CTA buttons
@@ -1627,7 +1668,11 @@ $('testRetryBtn').addEventListener('click',()=>{
   if(appMode==='updrs'){ testState='idle'; $('updrsTestOverlay').classList.remove('hidden'); }
   else if(appMode==='video'){ $('videoDropOverlay').classList.remove('hidden'); }
 });
-$('testDoneBtn').addEventListener('click',()=>setMode('free'));
+$('testDoneBtn').addEventListener('click',()=>{
+  $('resultsOverlay').classList.remove('visible');
+  testState='idle';
+  $('assessSelector').classList.remove('hidden');
+});
 
 // Video file input
 const dropZone = $('dropZone'), fileInput = $('videoFileInput');
