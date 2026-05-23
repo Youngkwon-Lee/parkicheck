@@ -187,13 +187,14 @@
     /* ── Assessment Selector ── */
     #assessSelector { position:absolute; inset:0; z-index:104; background:rgba(3,3,10,0.92); backdrop-filter:blur(16px); display:flex; flex-direction:column; align-items:center; justify-content:center; padding:32px 24px; transition:opacity 0.4s; }
     .assess-title { font-size:0.62rem; letter-spacing:5px; color:rgba(255,255,255,0.3); margin-bottom:28px; }
-    .assess-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; max-width:520px; width:100%; }
-    .assess-card { background:rgba(10,12,24,0.9); border:1px solid rgba(255,255,255,0.07); border-radius:16px; padding:22px 20px; cursor:pointer; transition:all 0.22s; display:flex; flex-direction:column; gap:6px; position:relative; overflow:hidden; }
+    .assess-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; max-width:560px; width:100%; }
+    .assess-card { background:rgba(10,12,24,0.9); border:1px solid rgba(255,255,255,0.07); border-radius:16px; padding:16px 14px; cursor:pointer; transition:all 0.22s; display:flex; flex-direction:column; gap:5px; position:relative; overflow:hidden; }
+    .assess-name { font-size:0.72rem; letter-spacing:1.5px; color:#fff; font-weight:bold; }
     .assess-card:hover { border-color:var(--ac); background:rgba(15,18,34,0.95); transform:translateY(-2px); }
     .assess-card::before { content:''; position:absolute; inset:0; background:radial-gradient(circle at 50% 0%, var(--ac) 0%, transparent 60%); opacity:0; transition:opacity 0.3s; }
     .assess-card:hover::before { opacity:0.06; }
     .assess-num { font-size:0.58rem; letter-spacing:3px; color:var(--ac); opacity:0.7; }
-    .assess-name { font-size:0.82rem; letter-spacing:2px; color:#fff; font-weight:bold; }
+    /* assess-name overridden above */
     .assess-desc { font-size:0.65rem; color:rgba(255,255,255,0.35); line-height:1.55; }
     .assess-dot { width:28px; height:3px; border-radius:2px; margin-top:8px; background:var(--ac); box-shadow:0 0 8px var(--ac); }
     .assess-back { margin-top:20px; font-size:0.65rem; letter-spacing:2px; color:rgba(255,255,255,0.25); cursor:pointer; border:none; background:none; font-family:'Courier New',monospace; transition:color 0.2s; }
@@ -383,13 +384,13 @@
       <div class="assess-card" style="--ac:#00ffcc" onclick="selectAssessment('finger')">
         <div class="assess-num">UPDRS 3.4</div>
         <div class="assess-name">FINGER TAPPING</div>
-        <div class="assess-desc">검지–엄지 탭 빈도·리듬·진폭·피로도</div>
+        <div class="assess-desc">검지–엄지 탭 빈도·리듬·진폭</div>
         <div class="assess-dot"></div>
       </div>
       <div class="assess-card" style="--ac:#ff00ff" onclick="selectAssessment('hand')">
         <div class="assess-num">UPDRS 3.5</div>
         <div class="assess-name">HAND MOVEMENTS</div>
-        <div class="assess-desc">주먹 쥐었다 펴기 속도·진폭·대칭성</div>
+        <div class="assess-desc">주먹 쥐었다 펴기 속도·진폭</div>
         <div class="assess-dot"></div>
       </div>
       <div class="assess-card" style="--ac:#ff8800" onclick="selectAssessment('pronation')">
@@ -398,10 +399,22 @@
         <div class="assess-desc">손 뒤집기 빈도·진폭·리듬</div>
         <div class="assess-dot"></div>
       </div>
-      <div class="assess-card" style="--ac:#a78bfa; opacity:0.45; cursor:not-allowed" onclick="">
-        <div class="assess-num">COMING SOON</div>
-        <div class="assess-name">TREMOR</div>
-        <div class="assess-desc">정지 시 손 떨림 주파수·진폭 분석</div>
+      <div class="assess-card" style="--ac:#a78bfa" onclick="selectAssessment('tremor')">
+        <div class="assess-num">UPDRS 3.14</div>
+        <div class="assess-name">REST TREMOR</div>
+        <div class="assess-desc">정지 시 손 떨림 주파수·진폭</div>
+        <div class="assess-dot"></div>
+      </div>
+      <div class="assess-card" style="--ac:#00ff88" onclick="selectAssessment('toe')">
+        <div class="assess-num">UPDRS 3.7</div>
+        <div class="assess-name">TOE TAPPING</div>
+        <div class="assess-desc">발끝 탭 빈도·진폭·리듬</div>
+        <div class="assess-dot"></div>
+      </div>
+      <div class="assess-card" style="--ac:#ffee00" onclick="selectAssessment('leg')">
+        <div class="assess-num">UPDRS 3.8</div>
+        <div class="assess-name">LEG AGILITY</div>
+        <div class="assess-desc">무릎 들기 빈도·높이·리듬</div>
         <div class="assess-dot"></div>
       </div>
     </div>
@@ -688,7 +701,7 @@ const FINGER_FREQS = [523,659,784,1047];
 const TAP_THRESH   = 0.065;
 const TAP_COOLDOWN = 140;
 const COMBO_WINDOW = 1300;
-const TEST_DURATION    = 10000;
+const TEST_DURATIONS   = {finger:10000, hand:10000, pronation:10000, tremor:15000, toe:10000, leg:10000};
 const ARREST_THRESHOLD = 600;
 const CIRCUMFERENCE    = 2 * Math.PI * 46;
 
@@ -708,18 +721,33 @@ let appMode = 'free';
 
 // UPDRS live test state
 let testState = 'idle';
-let testType  = 'finger'; // 'finger' | 'hand' | 'pronation'
+let testType  = 'finger'; // 'finger'|'hand'|'pronation'|'tremor'|'toe'|'leg'
 let graphPulse = 0;
 const testData = { taps:[], startTime:0, arrests:0, lastTapT:0, currentMaxDist:0, handSizeRef:0 };
 
 // 3.5 Hand Movements detection state
-const prevHandOpen = {}; // key → bool
-const handCycleMs  = {}; // key → last cycle timestamp
+const prevHandOpen = {};
+const handCycleMs  = {};
 
 // 3.6 Pronation-Supination detection state
-const prevPalmSign = {}; // key → +1/-1 (facing / away)
-const pronationMs  = {}; // key → last flip timestamp
-const pronationAmp = {}; // key → max deviation this half-cycle
+const prevPalmSign = {};
+const pronationMs  = {};
+const pronationAmp = {};
+
+// 3.14 Tremor state
+const tremorBuffer = []; // {t,x,y} wrist samples
+let tremorLiveFreq = 0;
+const tremorLastRingT = {};
+
+// Pose (3.7 Toe / 3.8 Leg) state
+let poseModel = null, poseResults = null;
+let poseModelLoaded = false, poseModelLoading = false;
+const prevAnkleUp  = {left:false, right:false};
+const ankleBaseY   = {left:-1,    right:-1};
+const lastToeTapMs = {left:0,     right:0};
+const prevKneeUp   = {left:false, right:false};
+const kneeBaseY    = {left:-1,    right:-1};
+const lastLegTapMs = {left:0,     right:0};
 
 // Video analysis
 let pendingResolve = null;   // resolves after each hands.onResults in video mode
@@ -832,6 +860,30 @@ class SpinRing {
   constructor(x,y,size=1){this.x=x;this.y=y;this.r=8;this.maxR=(70+Math.random()*40)*size;this.life=1;}
   update(){this.r+=7;this.life=Math.max(0,1-this.r/this.maxR);}
   draw(ctx){if(this.life<=0)return;ctx.save();ctx.globalAlpha=this.life*0.8;ctx.strokeStyle='#ff8800';ctx.lineWidth=3*this.life;ctx.shadowBlur=22;ctx.shadowColor='#ff8800';ctx.beginPath();ctx.arc(this.x,this.y,this.r,0,Math.PI*2);ctx.stroke();ctx.restore();}
+  isDead(){return this.life<=0;}
+}
+
+// ── 3.14 Rest Tremor effect ──────────────────
+class ResonanceRing {
+  constructor(x,y,color){this.x=x;this.y=y;this.color=color;this.r=4;this.maxR=40+Math.random()*20;this.life=1;this.lw=1+Math.random()*1.2;}
+  update(){this.r+=3.5;this.life=Math.max(0,1-this.r/this.maxR);}
+  draw(ctx){if(this.life<=0)return;ctx.save();ctx.globalAlpha=this.life*0.75;ctx.strokeStyle=this.color;ctx.lineWidth=this.lw;ctx.shadowBlur=14;ctx.shadowColor=this.color;ctx.beginPath();ctx.arc(this.x,this.y,this.r,0,Math.PI*2);ctx.stroke();ctx.restore();}
+  isDead(){return this.life<=0;}
+}
+
+// ── 3.7 Toe Tapping effect ───────────────────
+class GroundRipple {
+  constructor(x,y,color,delay=0){this.x=x;this.y=y;this.color=color;this.r=4;this.life=1;this.timer=delay;}
+  update(){if(this.timer>0){this.timer--;return;}this.r+=5;this.life=Math.max(0,1-this.r/80);}
+  draw(ctx){if(this.timer>0||this.life<=0)return;ctx.save();ctx.globalAlpha=this.life*0.72;ctx.strokeStyle=this.color;ctx.lineWidth=2.5*this.life;ctx.shadowBlur=18;ctx.shadowColor=this.color;ctx.translate(this.x,this.y);ctx.scale(1.9,0.45);ctx.beginPath();ctx.arc(0,0,this.r,0,Math.PI*2);ctx.stroke();ctx.restore();}
+  isDead(){return this.life<=0;}
+}
+
+// ── 3.8 Leg Agility effect ───────────────────
+class HeightArc {
+  constructor(x,y,color,delay=0){this.x=x;this.y=y;this.color=color;this.timer=delay;this.life=1;this.vx=(Math.random()-0.5)*7;this.vy=-(5+Math.random()*7);this.r=12+Math.random()*22;}
+  update(){if(this.timer>0){this.timer--;return;}this.x+=this.vx;this.y+=this.vy;this.vy+=0.35;this.life-=0.042;}
+  draw(ctx){if(this.timer>0||this.life<=0)return;ctx.save();ctx.globalAlpha=this.life*0.88;ctx.strokeStyle=this.color;ctx.lineWidth=2.5*this.life;ctx.shadowBlur=16;ctx.shadowColor=this.color;ctx.beginPath();ctx.arc(this.x,this.y,this.r*this.life*0.6,Math.PI*1.15,Math.PI*1.85);ctx.stroke();ctx.restore();}
   isDead(){return this.life<=0;}
 }
 
@@ -1024,10 +1076,33 @@ function scoreUPDRS(taps, arrests, durationSec = 10) {
 }
 
 // ═══════════════════════════════════════════
+// TREMOR DFT ANALYSIS
+// ═══════════════════════════════════════════
+function computeTremorDFT(buffer) {
+  if(buffer.length < 45) return {freq:0, amp:0};
+  const N = buffer.length;
+  const duration = (buffer[N-1].t - buffer[0].t) / 1000;
+  if(duration < 1) return {freq:0, amp:0};
+  const fps_est = N / duration;
+  const mean = buffer.reduce((a,s)=>a+s.y,0)/N;
+  const s = buffer.map(p=>p.y-mean);
+  const freqRes = fps_est/N;
+  const kMin = Math.ceil(3/freqRes), kMax = Math.floor(12/freqRes);
+  let bestFreq=0, bestAmp=0;
+  for(let k=kMin; k<=Math.min(kMax,Math.floor(N/2)); k++){
+    let re=0, im=0;
+    for(let n=0; n<N; n++){const a=2*Math.PI*k*n/N; re+=s[n]*Math.cos(a); im-=s[n]*Math.sin(a);}
+    const amp=Math.sqrt(re*re+im*im)/N, freq=k*freqRes;
+    if(amp>bestAmp){bestAmp=amp;bestFreq=freq;}
+  }
+  return {freq:bestFreq, amp:bestAmp};
+}
+
+// ═══════════════════════════════════════════
 // SHOW RESULTS  (shared: live + video)
 // ═══════════════════════════════════════════
 function showResults(durationSec = 10, title = 'UPDRS 3.4 — FINGER TAPPING') {
-  const {score,raw,factors,freq,arrests,iti_cv,fatig,maxAmp,n,confidence} = scoreUPDRS(testData.taps, testData.arrests, durationSec);
+  const {score,raw,factors,freq,arrests,iti_cv,fatig,maxAmp,meanAmp,n,confidence} = scoreUPDRS(testData.taps, testData.arrests, durationSec);
   const color = UPDRS_COLORS[score];
   const el = s => document.getElementById(s);
 
@@ -1094,6 +1169,77 @@ function showResults(durationSec = 10, title = 'UPDRS 3.4 — FINGER TAPPING') {
   saveBtn.style.display = ''; saveBtn.disabled = false;
   saveMsg.textContent = ''; saveMsg.style.color = '';
   if (!currentUser) saveMsg.textContent = '로그인하면 기록이 저장됩니다';
+}
+
+// ═══════════════════════════════════════════
+// TREMOR RESULTS
+// ═══════════════════════════════════════════
+function showTremorResults() {
+  const tr = computeTremorDFT(tremorBuffer);
+  const normAmp = testData.handSizeRef > 0 ? tr.amp / testData.handSizeRef : tr.amp;
+  const score = normAmp < 0.015 ? 0 : normAmp < 0.04 ? 1 : normAmp < 0.08 ? 2 : normAmp < 0.16 ? 3 : 4;
+  const color = UPDRS_COLORS[score];
+  const n = tremorBuffer.length;
+  const dur = (TEST_DURATIONS.tremor || 15000) / 1000;
+  const confidence = n >= 300 ? 'HIGH' : n >= 150 ? 'MEDIUM' : 'LOW';
+  const FC2 = ['#00ffcc','#88ff44','#ffff00','#ff8800','#ff2244'];
+  const el = s => document.getElementById(s);
+
+  el('resultsTitleH2').textContent = 'UPDRS 3.14-3.16 — REST TREMOR';
+  el('updrsScore').textContent = score;
+  el('updrsScore').style.color = color;
+  el('updrsScore').style.textShadow = `0 0 50px ${color}`;
+  el('updrsLabel').textContent = `TREMOR — ${UPDRS_LABELS[score]}`;
+  el('updrsDesc').textContent  = UPDRS_DESC[score];
+
+  el('resTaps').textContent    = n;
+  el('lblTaps').textContent    = `SAMPLES / ${dur}s`;
+  el('resFreq').textContent    = tr.freq > 0 ? tr.freq.toFixed(1) : '--';
+  el('resArrests').textContent = tr.freq > 0 ? `${tr.freq.toFixed(1)}Hz` : '--';
+  el('resITI').textContent     = `${(normAmp*100).toFixed(1)}`;
+  el('resMaxAmp').textContent  = `${(normAmp*100).toFixed(1)}`;
+  el('resFatig').textContent   = `${dur}s`;
+
+  // Amplitude chart: show raw waveform samples
+  const chartEl = el('ampChart'); chartEl.innerHTML = '';
+  const show = Math.min(tremorBuffer.length, 80);
+  const recent = tremorBuffer.slice(-show);
+  if(recent.length > 1) {
+    const yVals = recent.map(s=>s.y);
+    const minY=Math.min(...yVals), maxY=Math.max(...yVals), range=maxY-minY||0.001;
+    recent.forEach(s=>{
+      const pct=((s.y-minY)/range)*100;
+      const b=document.createElement('div'); b.className='amp-bar';
+      b.style.cssText=`height:${pct}%;background:#a78bfa;box-shadow:0 0 4px #a78bfa;`;
+      chartEl.appendChild(b);
+    });
+  }
+
+  // Factor bars: freq in 4-7Hz = PD classic, amp score
+  const freqScore = tr.freq >= 3.5 && tr.freq <= 7.5 ? score : 0;
+  [[  'freq',freqScore],['arrest',0],['rhythm',0],['amp',score],['fatig',0]].forEach(([id,fs])=>{
+    const c=FC2[Math.min(fs,4)];
+    el(`fb-${id}`).style.width=`${(fs/4)*100}%`; el(`fb-${id}`).style.background=c; el(`fb-${id}`).style.boxShadow=`0 0 6px ${c}`;
+    el(`fs-${id}`).textContent=`${fs}/4`; el(`fs-${id}`).style.color=c;
+  });
+
+  const confC={HIGH:'#00ffcc',MEDIUM:'#ffff00',LOW:'#ff8800'};
+  const ct=el('confidenceTag'); ct.textContent=`${confidence} CONFIDENCE  (n=${n})`; ct.style.color=confC[confidence]; ct.style.borderColor=confC[confidence];
+  el('fatigVal').textContent = tr.freq > 0 ? `${tr.freq.toFixed(2)} Hz peak` : 'no tremor detected';
+  el('fatigVal').style.color = color;
+  el('resultsOverlay').classList.add('visible');
+
+  lastResultPayload = {
+    mode: 'live', score, raw_score: parseFloat(normAmp.toFixed(4)),
+    n_taps: n, frequency: parseFloat((tr.freq||0).toFixed(2)),
+    arrests: 0, iti_cv: 0, max_amplitude: parseFloat(normAmp.toFixed(4)),
+    fatigability: 0, confidence, duration_sec: dur,
+    factors: {test_type:'tremor', tremor_freq: parseFloat((tr.freq||0).toFixed(2)), tremor_amp: parseFloat(normAmp.toFixed(4))},
+  };
+  const saveBtn=el('saveResultBtn'), saveMsg=el('saveResultMsg');
+  saveBtn.style.display=''; saveBtn.disabled=false;
+  saveMsg.textContent=''; saveMsg.style.color='';
+  if(!currentUser) saveMsg.textContent='로그인하면 기록이 저장됩니다';
 }
 
 // ═══════════════════════════════════════════
@@ -1241,14 +1387,21 @@ function setMode(mode) {
 // ASSESSMENT SELECTION
 // ═══════════════════════════════════════════
 const ASSESS_META = {
-  finger:    {num:'3.4', name:'FINGER TAPPING',       color:'#00ffcc', desc:'검지를 엄지에 최대한 빠르고 넓게 탭하세요.\n10초간 측정합니다.'},
-  hand:      {num:'3.5', name:'HAND MOVEMENTS',        color:'#ff00ff', desc:'주먹을 완전히 쥐었다가 완전히 펴세요.\n최대한 빠르고 크게 10초간 반복합니다.'},
-  pronation: {num:'3.6', name:'PRONATION-SUPINATION',  color:'#ff8800', desc:'손바닥이 위-아래를 향하도록 뒤집으세요.\n팔꿈치를 구부린 채 10초간 반복합니다.'},
+  finger:    {num:'3.4',    name:'FINGER TAPPING',       color:'#00ffcc', desc:'검지를 엄지에 최대한 빠르고 넓게 탭하세요.\n10초간 측정합니다.'},
+  hand:      {num:'3.5',    name:'HAND MOVEMENTS',        color:'#ff00ff', desc:'주먹을 완전히 쥐었다가 완전히 펴세요.\n최대한 빠르고 크게 10초간 반복합니다.'},
+  pronation: {num:'3.6',    name:'PRONATION-SUPINATION',  color:'#ff8800', desc:'손바닥이 위-아래를 향하도록 뒤집으세요.\n팔꿈치를 구부린 채 10초간 반복합니다.'},
+  tremor:    {num:'3.14',   name:'REST TREMOR',            color:'#a78bfa', desc:'손을 무릎 위에 편안히 올려놓으세요.\n긴장을 풀고 15초간 정지합니다.\n카메라에 손목이 잘 보이게 위치시키세요.'},
+  toe:       {num:'3.7',    name:'TOE TAPPING',            color:'#00ff88', desc:'카메라가 발을 볼 수 있게 위치시키세요.\n발꿈치는 바닥에 고정하고\n발끝을 최대한 빠르고 높게 10초간 탭하세요.'},
+  leg:       {num:'3.8',    name:'LEG AGILITY',            color:'#ffee00', desc:'카메라가 무릎을 볼 수 있게 위치시키세요.\n무릎을 최대한 높이 들었다가\n빠르게 내리는 동작을 10초간 반복하세요.'},
 };
 function selectAssessment(type) {
   testType = type;
   const m = ASSESS_META[type];
+  if(!m) return;
   document.getElementById('assessSelector').classList.add('hidden');
+
+  // Lazy-load pose model for toe/leg
+  if(type==='toe'||type==='leg') loadPoseModel();
 
   // Start camera + render loop on first assessment selection
   if (!cameraStarted) {
@@ -1258,6 +1411,12 @@ function selectAssessment(type) {
     resize();
     requestAnimationFrame(frame);
   }
+
+  // Update HUD label and timer initial value
+  const lbl = type==='tremor' ? 'SAMPLES' : (type==='toe'||type==='leg') ? 'LIFTS' : 'TAPS';
+  document.getElementById('testTapLabel').textContent = lbl;
+  const durSec = (TEST_DURATIONS[type]||10000)/1000;
+  document.getElementById('timerText').textContent = durSec;
 
   const ol = document.getElementById('updrsTestOverlay');
   ol.querySelector('.ov-h2').textContent = `UPDRS ${m.num}`;
@@ -1284,22 +1443,32 @@ function startCountdown() {
 }
 function startTest() {
   testState='running';
+  if(testType==='tremor'){ tremorBuffer.length=0; tremorLiveFreq=0; }
+  // Reset pose baselines for fresh test
+  if(testType==='toe'||testType==='leg'){
+    ankleBaseY.left=ankleBaseY.right=-1; prevAnkleUp.left=prevAnkleUp.right=false;
+    kneeBaseY.left=kneeBaseY.right=-1;   prevKneeUp.left=prevKneeUp.right=false;
+  }
   Object.assign(testData,{taps:[],arrests:0,startTime:Date.now(),lastTapT:Date.now(),currentMaxDist:0,handSizeRef:0});
   document.getElementById('testHud').classList.add('visible');
   document.getElementById('testTapCount').textContent='0';
-  setTimeout(endTest, TEST_DURATION);
+  const dur = TEST_DURATIONS[testType] || 10000;
+  setTimeout(endTest, dur);
 }
 function endTest() {
   if(testState!=='running') return;
   testState='done';
   document.getElementById('testHud').classList.remove('visible');
+  if(testType==='tremor'){ showTremorResults(); return; }
+  const dur = (TEST_DURATIONS[testType] || 10000) / 1000;
   const m = ASSESS_META[testType] || ASSESS_META.finger;
-  showResults(10, `UPDRS ${m.num} — ${m.name}`);
+  showResults(dur, `UPDRS ${m.num} — ${m.name}`);
 }
 function updateTimerRing() {
   if(testState!=='running') return;
-  const elapsed=Date.now()-testData.startTime, remaining=Math.max(0,(TEST_DURATION-elapsed)/1000);
-  const offset=CIRCUMFERENCE*Math.min(elapsed/TEST_DURATION,1);
+  const dur = TEST_DURATIONS[testType] || 10000;
+  const elapsed=Date.now()-testData.startTime, remaining=Math.max(0,(dur-elapsed)/1000);
+  const offset=CIRCUMFERENCE*Math.min(elapsed/dur,1);
   const color=remaining<=3?'#ff4444':remaining<=5?'#ffaa00':'#00ffcc';
   const ring=document.getElementById('timerRing'), txt=document.getElementById('timerText');
   ring.style.strokeDashoffset=offset; ring.style.stroke=color;
@@ -1550,6 +1719,207 @@ function detectPronation(landmarks, handIdx) {
 }
 
 // ═══════════════════════════════════════════
+// 3.14 REST TREMOR DETECTION
+// ═══════════════════════════════════════════
+function detectTremor(landmarks, handIdx) {
+  const W=canvas.width, H=canvas.height;
+  const wrist=landmarks[0], mcp9=landmarks[9];
+  const hs=Math.sqrt((wrist.x-mcp9.x)**2+(wrist.y-mcp9.y)**2);
+  if(hs>0.05) testData.handSizeRef=testData.handSizeRef?testData.handSizeRef*0.9+hs*0.1:hs;
+
+  if(testState==='running'){
+    const now=Date.now();
+    tremorBuffer.push({t:now, x:wrist.x, y:wrist.y});
+    document.getElementById('testTapCount').textContent=tremorBuffer.length;
+    // Update live frequency estimate every 30 samples
+    if(tremorBuffer.length>=60 && tremorBuffer.length%30===0){
+      const est=computeTremorDFT(tremorBuffer.slice(-120));
+      if(est.freq>0) tremorLiveFreq=est.freq;
+    }
+    // Emit resonance ring at detected tremor frequency
+    if(tremorLiveFreq>0){
+      const period=1000/tremorLiveFreq;
+      const last=tremorLastRingT[handIdx]||0;
+      if(now-last>=period){
+        tremorLastRingT[handIdx]=now;
+        const rx=(1-wrist.x)*W, ry=wrist.y*H;
+        effects.push(new ResonanceRing(rx,ry,'#a78bfa'));
+        effects.push(new ResonanceRing(rx,ry,'#c4b5fd'));
+      }
+    }
+  }
+}
+
+function drawTremorScope(W, H) {
+  if(!tremorBuffer.length) return;
+  const GW=260, GH=100, GX=20, GY=H-GH-24;
+  const show=Math.min(tremorBuffer.length,120), recent=tremorBuffer.slice(-show);
+
+  ctx.save(); ctx.globalAlpha=0.88;
+  ctx.fillStyle='rgba(6,8,18,0.9)'; ctx.strokeStyle='rgba(167,139,250,0.22)'; ctx.lineWidth=1;
+  ctx.beginPath();
+  if(ctx.roundRect) ctx.roundRect(GX,GY,GW,GH,12); else ctx.rect(GX,GY,GW,GH);
+  ctx.fill(); ctx.stroke(); ctx.restore();
+
+  ctx.save(); ctx.globalAlpha=0.45; ctx.fillStyle='#a78bfa'; ctx.font='9px "Courier New",monospace'; ctx.textAlign='left';
+  ctx.fillText('REST TREMOR', GX+12, GY+13);
+  if(tremorLiveFreq>0){ctx.textAlign='right'; ctx.fillStyle='#c4b5fd'; ctx.fillText(`${tremorLiveFreq.toFixed(1)} Hz`, GX+GW-12, GY+13);}
+  ctx.restore();
+
+  const pad={t:22,r:12,b:14,l:14};
+  const iW=GW-pad.l-pad.r, iH=GH-pad.t-pad.b;
+  const yVals=recent.map(s=>s.y);
+  const minY=Math.min(...yVals), maxY=Math.max(...yVals), rangeY=maxY-minY||0.0005;
+  const px=i=>GX+pad.l+(show>1?(i/(show-1))*iW:iW/2);
+  const py=v=>GY+pad.t+(1-(v-minY)/rangeY)*iH;
+
+  ctx.save(); ctx.strokeStyle='#a78bfa'; ctx.lineWidth=1.8;
+  ctx.shadowBlur=10; ctx.shadowColor='#a78bfa';
+  ctx.beginPath();
+  recent.forEach((s,i)=>i===0?ctx.moveTo(px(0),py(s.y)):ctx.lineTo(px(i),py(s.y)));
+  ctx.stroke(); ctx.restore();
+
+  const elapsed=tremorBuffer.length>1?(tremorBuffer[tremorBuffer.length-1].t-tremorBuffer[0].t)/1000:0;
+  ctx.save(); ctx.globalAlpha=0.5; ctx.fillStyle='#a78bfa'; ctx.font='9px "Courier New",monospace';
+  ctx.textAlign='right'; ctx.fillText(`${elapsed.toFixed(1)}s`, GX+GW-pad.r, GY+GH-4); ctx.restore();
+}
+
+// ═══════════════════════════════════════════
+// 3.7 TOE TAPPING DETECTION
+// ═══════════════════════════════════════════
+const TOE_LIFT_THRESH = 0.045, TOE_COOLDOWN = 220;
+
+function triggerToeTap(x, y, lift) {
+  const sc=0.8+lift*5;
+  for(let i=0;i<14;i++) effects.push(new GroundRipple(x,y,'#00ff88',i*2));
+  for(let i=0;i<8;i++)  effects.push(new Particle(x,y,'#00ff88',sc*0.7));
+  effects.push(new GlowPulse(x,y,'#00ff88'), new ScreenFlash('#00ff88'));
+  bgWaves.push(new BgWave(x,y,'#00ff88'));
+  if(testState==='running'){
+    const now=Date.now(), elapsed=now-testData.lastTapT;
+    if(testData.taps.length>0&&elapsed>ARREST_THRESHOLD) testData.arrests++;
+    testData.taps.push({t:now,amplitude:lift});
+    testData.lastTapT=now;
+    document.getElementById('testTapCount').textContent=testData.taps.length;
+    graphPulse=1;
+  }
+  combo=(Date.now()-lastTapTime<COMBO_WINDOW)?combo+1:1;
+  lastTapTime=Date.now(); tapCount++;
+  tapHistory.push(Date.now()); if(tapHistory.length>10)tapHistory.shift();
+  if(combo>=3) effects.push(new Lightning(x,y,'#00ff88'));
+  playTap(185,combo);
+  if(appMode!=='video') updateFreeHUD();
+}
+
+function detectToeTap(poseLandmarks) {
+  if(!poseLandmarks) return;
+  const W=canvas.width, H=canvas.height;
+  const now=Date.now();
+  [{name:'left',idx:27},{name:'right',idx:28}].forEach(({name,idx})=>{
+    const lm=poseLandmarks[idx];
+    if(!lm||(lm.visibility!=null&&lm.visibility<0.4)) return;
+    if(ankleBaseY[name]<0){ ankleBaseY[name]=lm.y; return; }
+    ankleBaseY[name]=ankleBaseY[name]*0.985+lm.y*0.015;
+    const lift=ankleBaseY[name]-lm.y;
+    const isUp=lift>TOE_LIFT_THRESH, wasUp=prevAnkleUp[name];
+    const x=(1-lm.x)*W, y=lm.y*H;
+    if(!isUp&&wasUp&&(now-lastToeTapMs[name])>TOE_COOLDOWN){
+      triggerToeTap(x,y,Math.max(lift,TOE_LIFT_THRESH));
+      lastToeTapMs[name]=now;
+    }
+    prevAnkleUp[name]=isUp;
+  });
+}
+
+// ═══════════════════════════════════════════
+// 3.8 LEG AGILITY DETECTION
+// ═══════════════════════════════════════════
+const KNEE_LIFT_THRESH = 0.065, LEG_COOLDOWN = 260;
+
+function triggerLegLift(x, y, lift) {
+  const sc=0.8+lift*4;
+  for(let i=0;i<12;i++) effects.push(new HeightArc(x,y,'#ffee00',i*2));
+  for(let i=0;i<6;i++)  effects.push(new Particle(x,y,i%2===0?'#ffee00':'#ffcc00',sc*0.7));
+  effects.push(new Burst(x,y,'#ffee00'), new GlowPulse(x,y,'#ffee00'), new ScreenFlash('#ffee00'));
+  bgWaves.push(new BgWave(x,y,'#ffee00'));
+  if(testState==='running'){
+    const now=Date.now(), elapsed=now-testData.lastTapT;
+    if(testData.taps.length>0&&elapsed>ARREST_THRESHOLD) testData.arrests++;
+    testData.taps.push({t:now,amplitude:lift});
+    testData.lastTapT=now;
+    document.getElementById('testTapCount').textContent=testData.taps.length;
+    graphPulse=1;
+  }
+  combo=(Date.now()-lastTapTime<COMBO_WINDOW)?combo+1:1;
+  lastTapTime=Date.now(); tapCount++;
+  tapHistory.push(Date.now()); if(tapHistory.length>10)tapHistory.shift();
+  if(combo>=3) effects.push(new Lightning(x,y,'#ffee00'));
+  playTap(150,combo);
+  if(appMode!=='video') updateFreeHUD();
+}
+
+function detectLegAgility(poseLandmarks) {
+  if(!poseLandmarks) return;
+  const W=canvas.width, H=canvas.height;
+  const now=Date.now();
+  [{name:'left',idx:25},{name:'right',idx:26}].forEach(({name,idx})=>{
+    const lm=poseLandmarks[idx];
+    if(!lm||(lm.visibility!=null&&lm.visibility<0.4)) return;
+    if(kneeBaseY[name]<0){ kneeBaseY[name]=lm.y; return; }
+    kneeBaseY[name]=kneeBaseY[name]*0.985+lm.y*0.015;
+    const lift=kneeBaseY[name]-lm.y;
+    const isUp=lift>KNEE_LIFT_THRESH, wasUp=prevKneeUp[name];
+    const x=(1-lm.x)*W, y=lm.y*H;
+    if(!isUp&&wasUp&&(now-lastLegTapMs[name])>LEG_COOLDOWN){
+      triggerLegLift(x,y,Math.max(lift,KNEE_LIFT_THRESH));
+      lastLegTapMs[name]=now;
+    }
+    prevKneeUp[name]=isUp;
+  });
+}
+
+// ═══════════════════════════════════════════
+// POSE MODEL  (lazy-loaded for toe/leg)
+// ═══════════════════════════════════════════
+function loadPoseModel() {
+  if(poseModelLoaded||poseModelLoading) return;
+  poseModelLoading=true;
+  const s=document.createElement('script');
+  s.src='https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js';
+  s.crossOrigin='anonymous';
+  s.onload=()=>{
+    try{
+      poseModel=new Pose({locateFile:f=>`https://cdn.jsdelivr.net/npm/@mediapipe/pose/${f}`});
+      poseModel.setOptions({modelComplexity:1,smoothLandmarks:true,minDetectionConfidence:0.7,minTrackingConfidence:0.5});
+      poseModel.onResults(r=>{ poseResults=r; });
+      poseModelLoaded=true;
+    }catch(e){ console.error('Pose init failed:',e); }
+  };
+  document.head.appendChild(s);
+}
+
+const POSE_CONNECTIONS=[[11,12],[11,13],[13,15],[12,14],[14,16],[11,23],[12,24],[23,24],[23,25],[25,27],[24,26],[26,28],[27,31],[28,32]];
+
+function drawPoseSkeleton(landmarks) {
+  if(!landmarks) return;
+  const W=canvas.width, H=canvas.height;
+  ctx.save(); ctx.strokeStyle='rgba(255,255,255,0.15)'; ctx.lineWidth=1.5;
+  POSE_CONNECTIONS.forEach(([a,b])=>{
+    const la=landmarks[a], lb=landmarks[b];
+    if(!la||!lb||(la.visibility!=null&&la.visibility<0.3)||(lb.visibility!=null&&lb.visibility<0.3)) return;
+    ctx.beginPath(); ctx.moveTo((1-la.x)*W,la.y*H); ctx.lineTo((1-lb.x)*W,lb.y*H); ctx.stroke();
+  });
+  // Highlight key landmarks
+  [[25,'#ffee00'],[26,'#ffee00'],[27,'#00ff88'],[28,'#00ff88']].forEach(([i,c])=>{
+    const lm=landmarks[i];
+    if(!lm||(lm.visibility!=null&&lm.visibility<0.3)) return;
+    ctx.fillStyle=c; ctx.shadowBlur=12; ctx.shadowColor=c;
+    ctx.beginPath(); ctx.arc((1-lm.x)*W,lm.y*H,6,0,Math.PI*2); ctx.fill();
+  });
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════════
 // HAND SKELETON
 // ═══════════════════════════════════════════
 function drawHand(landmarks, activeFingers, opts = {}) {
@@ -1591,14 +1961,23 @@ function frame() {
   bgWaves=bgWaves.filter(w=>{w.update();w.draw(ctx);return !w.isDead();});
   Object.values(trails).forEach(t=>t.draw(ctx));
 
-  if(handResults && handResults.multiHandLandmarks && appMode!=='video') {
-    handResults.multiHandLandmarks.forEach((lm,hi)=>{
-      let active=[false,false,false,false];
-      if(testType==='hand')       { detectHandMovements(lm,hi); }
-      else if(testType==='pronation') { detectPronation(lm,hi); }
-      else                        { active=detectTaps(lm,hi); }
-      drawHand(lm,active);
-    });
+  if(appMode!=='video') {
+    if(testType==='toe'||testType==='leg') {
+      if(poseResults&&poseResults.poseLandmarks){
+        if(testType==='toe') detectToeTap(poseResults.poseLandmarks);
+        else detectLegAgility(poseResults.poseLandmarks);
+        drawPoseSkeleton(poseResults.poseLandmarks);
+      }
+    } else if(handResults&&handResults.multiHandLandmarks){
+      handResults.multiHandLandmarks.forEach((lm,hi)=>{
+        let active=[false,false,false,false];
+        if(testType==='hand')           { detectHandMovements(lm,hi); }
+        else if(testType==='pronation') { detectPronation(lm,hi); }
+        else if(testType==='tremor')    { detectTremor(lm,hi); }
+        else                            { active=detectTaps(lm,hi); }
+        drawHand(lm,active);
+      });
+    }
   }
 
   const flashes=[],rest=[];
@@ -1609,7 +1988,9 @@ function frame() {
 
   updateTimerRing();
   if (graphPulse > 0) graphPulse = Math.max(0, graphPulse - 0.045);
-  if (testState === 'running') drawLiveGraph(W, H);
+  if (testState === 'running') {
+    if(testType==='tremor') drawTremorScope(W,H); else drawLiveGraph(W,H);
+  }
 
   requestAnimationFrame(frame);
 }
@@ -1626,7 +2007,15 @@ try {
     if(pendingResolve) { pendingResolve(); pendingResolve=null; }
   });
   camera = new Camera(video,{
-    onFrame: async()=>{ if(appMode!=='video') await hands.send({image:video}); },
+    onFrame: async()=>{
+      if(appMode!=='video'){
+        if((testType==='toe'||testType==='leg')&&poseModelLoaded&&poseModel){
+          await poseModel.send({image:video});
+        } else {
+          await hands.send({image:video});
+        }
+      }
+    },
     width:1280, height:720,
   });
 } catch(e) {
