@@ -201,19 +201,30 @@
     .assess-back:hover { color:rgba(255,255,255,0.5); }
 
     /* ── History panel ── */
-    #historyOverlay { position:absolute; inset:0; z-index:80; background:rgba(0,0,0,0.7); backdrop-filter:blur(10px); overflow-y:auto; display:flex; justify-content:center; align-items:flex-start; padding:60px 20px 40px; transition:opacity 0.4s; }
-    .history-card { background:rgba(6,8,18,0.96); border:1px solid var(--border); border-radius:20px; padding:30px; width:100%; max-width:560px; }
-    .history-card h2 { font-size:0.72rem; letter-spacing:4px; color:rgba(255,255,255,0.35); margin-bottom:20px; }
+    #historyOverlay { position:absolute; inset:0; z-index:80; background:rgba(0,0,0,0.7); backdrop-filter:blur(10px); overflow-y:auto; display:flex; justify-content:center; align-items:flex-start; padding:48px 16px 40px; transition:opacity 0.4s; }
+    .history-card { background:rgba(6,8,18,0.96); border:1px solid var(--border); border-radius:20px; padding:24px; width:100%; max-width:580px; }
+    .hist-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+    .hist-header h2 { font-size:0.72rem; letter-spacing:4px; color:rgba(255,255,255,0.35); margin:0; }
+    .hist-header-btns { display:flex; gap:6px; }
+    .hist-tabs { display:flex; gap:4px; margin-bottom:14px; }
+    .hist-tab-btn { padding:6px 16px; border:none; border-radius:20px; cursor:pointer; font-family:'Courier New',monospace; font-size:0.65rem; letter-spacing:1px; background:rgba(255,255,255,0.07); color:rgba(255,255,255,0.4); transition:all 0.2s; }
+    .hist-tab-btn.active { background:rgba(0,255,204,0.14); color:#00ffcc; }
+    #histChartCanvas { display:block; width:100%; height:180px; margin-bottom:10px; }
+    .hist-filter-bar { display:flex; gap:4px; flex-wrap:wrap; margin-bottom:14px; }
+    .hist-filter-btn { padding:3px 9px; border:1px solid rgba(255,255,255,0.1); border-radius:10px; cursor:pointer; font-family:'Courier New',monospace; font-size:0.58rem; letter-spacing:1px; background:transparent; color:rgba(255,255,255,0.38); transition:all 0.2s; }
+    .hist-filter-btn.active { border-color:var(--fc,#00ffcc); color:var(--fc,#00ffcc); background:rgba(255,255,255,0.05); }
+    .med-form { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-bottom:14px; padding:10px 12px; background:rgba(96,165,250,0.06); border:1px solid rgba(96,165,250,0.18); border-radius:10px; }
+    .med-label { font-size:0.62rem; letter-spacing:1px; color:#93c5fd; flex-shrink:0; }
+    .med-input { background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:6px; padding:6px 9px; color:#fff; font-family:'Courier New',monospace; font-size:0.72rem; outline:none; }
+    .med-input:focus { border-color:#60a5fa; }
     .hist-empty { text-align:center; color:rgba(255,255,255,0.3); font-size:0.82rem; padding:30px 0; }
-    .hist-row { display:flex; align-items:center; gap:14px; padding:14px 0; border-bottom:1px solid rgba(255,255,255,0.05); }
+    .hist-row { display:flex; align-items:center; gap:12px; padding:11px 0; border-bottom:1px solid rgba(255,255,255,0.05); }
     .hist-row:last-child { border-bottom:none; }
-    .hist-score { width:44px; height:44px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:1.3rem; font-weight:bold; flex-shrink:0; }
-    .hist-meta { flex:1; }
-    .hist-date { font-size:0.7rem; color:rgba(255,255,255,0.4); letter-spacing:1px; }
-    .hist-detail { font-size:0.75rem; color:rgba(255,255,255,0.6); margin-top:2px; }
-    .hist-mode { font-size:0.6rem; letter-spacing:1px; padding:2px 8px; border-radius:10px; background:rgba(255,255,255,0.07); color:rgba(255,255,255,0.4); }
-    .hist-trend { display:flex; align-items:flex-end; gap:3px; height:36px; margin-left:auto; }
-    .hist-bar { width:8px; border-radius:2px 2px 0 0; min-height:4px; }
+    .hist-score { width:42px; height:42px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:1.25rem; font-weight:bold; flex-shrink:0; }
+    .hist-meta { flex:1; min-width:0; }
+    .hist-date { font-size:0.68rem; color:rgba(255,255,255,0.38); letter-spacing:1px; }
+    .hist-detail { font-size:0.72rem; color:rgba(255,255,255,0.58); margin-top:2px; }
+    .hist-type-badge { font-size:0.56rem; letter-spacing:1px; padding:2px 7px; border-radius:8px; background:rgba(255,255,255,0.07); color:rgba(255,255,255,0.38); margin-left:4px; }
   </style>
 </head>
 <body>
@@ -334,10 +345,44 @@
   <!-- History panel -->
   <div id="historyOverlay" class="hidden">
     <div class="history-card">
-      <h2>MY RESULTS — UPDRS 3.4</h2>
-      <div id="historyList"><div class="hist-empty">불러오는 중...</div></div>
-      <div style="text-align:center;margin-top:20px">
-        <button class="btn-primary btn-ghost" onclick="$('historyOverlay').classList.add('hidden')">닫기</button>
+      <div class="hist-header">
+        <h2>MY RESULTS</h2>
+        <div class="hist-header-btns">
+          <button class="btn-primary btn-ghost" style="font-size:0.62rem;padding:6px 13px" onclick="generateReport()">📄 PDF</button>
+          <button class="btn-primary btn-ghost" style="font-size:0.62rem;padding:6px 13px" onclick="$('historyOverlay').classList.add('hidden')">닫기</button>
+        </div>
+      </div>
+      <div class="hist-tabs">
+        <button class="hist-tab-btn active" id="htChart" onclick="switchHistTab('chart')">CHART</button>
+        <button class="hist-tab-btn" id="htLog" onclick="switchHistTab('log')">LOG &amp; 약기록</button>
+      </div>
+
+      <!-- Chart view -->
+      <div id="histChartView">
+        <canvas id="histChartCanvas"></canvas>
+        <div class="hist-filter-bar">
+          <button class="hist-filter-btn active" style="--fc:#fff" onclick="setHistFilter(null,this)">ALL</button>
+          <button class="hist-filter-btn" style="--fc:#00ffcc" onclick="setHistFilter('finger',this)">3.4</button>
+          <button class="hist-filter-btn" style="--fc:#ff00ff" onclick="setHistFilter('hand',this)">3.5</button>
+          <button class="hist-filter-btn" style="--fc:#ff8800" onclick="setHistFilter('pronation',this)">3.6</button>
+          <button class="hist-filter-btn" style="--fc:#a78bfa" onclick="setHistFilter('tremor',this)">3.14</button>
+          <button class="hist-filter-btn" style="--fc:#00ff88" onclick="setHistFilter('toe',this)">3.7</button>
+          <button class="hist-filter-btn" style="--fc:#ffee00" onclick="setHistFilter('leg',this)">3.8</button>
+        </div>
+      </div>
+
+      <!-- Log view -->
+      <div id="histLogView" style="display:none">
+        <div class="med-form">
+          <span class="med-label">💊 약 복용</span>
+          <select class="med-input" id="medName" style="flex:1;min-width:90px">
+            <option>레보도파</option><option>시네메트</option><option>마도파</option><option>미라펙스</option><option>리큅</option><option>기타</option>
+          </select>
+          <input class="med-input" type="number" id="medDose" placeholder="mg" style="width:58px">
+          <input class="med-input" type="datetime-local" id="medTime" style="font-size:0.65rem;flex:1;min-width:130px">
+          <button class="btn-primary" style="font-size:0.68rem;padding:7px 13px" onclick="saveMedLog()">+ 기록</button>
+        </div>
+        <div id="historyList"><div class="hist-empty">불러오는 중...</div></div>
       </div>
     </div>
   </div>
@@ -669,34 +714,235 @@ function handleSaveResult() {
   saveResultToDb(lastResultPayload);
 }
 
-// ── History ─────────────────────────────────
+// ── History / Chart / Med Log ────────────────
+let histResults = [], histMedLogs = [], activeHistFilter = null;
+
 async function showHistory() {
   document.getElementById('profileMenu').classList.remove('open');
   document.getElementById('historyOverlay').classList.remove('hidden');
-  const listEl = document.getElementById('historyList');
-  listEl.innerHTML = '<div class="hist-empty">불러오는 중...</div>';
-  const { data, error } = await supa
+  switchHistTab('chart');
+  if(!currentUser) return;
+
+  const { data } = await supa
     .from('updrs_results')
-    .select('tested_at,mode,score,n_taps,frequency,fatigability,confidence')
-    .order('tested_at', { ascending: false })
-    .limit(50);
-  if (error || !data?.length) {
-    listEl.innerHTML = '<div class="hist-empty">아직 기록이 없습니다.</div>'; return;
+    .select('tested_at,mode,score,n_taps,frequency,fatigability,confidence,factors')
+    .order('tested_at', { ascending: true })
+    .limit(200);
+
+  histResults = data || [];
+  histMedLogs = getMedLogs();
+  setTimeout(refreshHistChart, 60);
+}
+
+function switchHistTab(tab) {
+  document.getElementById('histChartView').style.display = tab==='chart' ? '' : 'none';
+  document.getElementById('histLogView').style.display   = tab==='log'   ? '' : 'none';
+  document.getElementById('htChart').classList.toggle('active', tab==='chart');
+  document.getElementById('htLog').classList.toggle('active',   tab==='log');
+  if(tab==='log') {
+    const now = new Date(); now.setMinutes(now.getMinutes()-now.getTimezoneOffset());
+    document.getElementById('medTime').value = now.toISOString().slice(0,16);
+    renderHistList();
   }
-  const colors = ['#00ffcc','#88ff44','#ffff00','#ff8800','#ff2244'];
-  const labels = ['정상','경미','중등도','심각','최중증'];
-  listEl.innerHTML = data.map(r => {
-    const d = new Date(r.tested_at);
-    const dateStr = `${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')}`;
-    const c = colors[r.score] || '#fff';
+}
+
+function setHistFilter(type, btn) {
+  activeHistFilter = type;
+  document.querySelectorAll('.hist-filter-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  refreshHistChart();
+}
+
+// ── Medication log (localStorage) ────────────
+function getMedLogs() {
+  if(!currentUser) return [];
+  try { return JSON.parse(localStorage.getItem(`pkc_meds_${currentUser.id}`) || '[]'); } catch { return []; }
+}
+function saveMedLog() {
+  if(!currentUser) return;
+  const med  = document.getElementById('medName').value;
+  const dose = parseInt(document.getElementById('medDose').value) || null;
+  const time = document.getElementById('medTime').value;
+  if(!time) return;
+  const logs = getMedLogs();
+  logs.push({id:Date.now(), taken_at:new Date(time).toISOString(), medication:med, dose_mg:dose});
+  localStorage.setItem(`pkc_meds_${currentUser.id}`, JSON.stringify(logs));
+  histMedLogs = logs;
+  refreshHistChart();
+  renderHistList();
+  const btn = document.querySelector('.med-form .btn-primary');
+  const orig = btn.textContent; btn.textContent='✓'; btn.style.color='#00ffcc';
+  setTimeout(()=>{btn.textContent=orig;btn.style.color='';},1200);
+}
+
+// ── Chart rendering ───────────────────────────
+const TYPE_COLORS = {finger:'#00ffcc',hand:'#ff00ff',pronation:'#ff8800',tremor:'#a78bfa',toe:'#00ff88',leg:'#ffee00'};
+const SCORE_COLORS = ['#00ffcc','#88ff44','#ffff00','#ff8800','#ff2244'];
+
+function refreshHistChart() {
+  const canvas = document.getElementById('histChartCanvas');
+  if(!canvas) return;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width  = canvas.offsetWidth  * dpr;
+  canvas.height = canvas.offsetHeight * dpr;
+  if(!histResults.length) return;
+  drawHistChart(canvas, histResults, histMedLogs, activeHistFilter);
+}
+
+function drawHistChart(canvas, results, medLogs, filter) {
+  const dpr = window.devicePixelRatio || 1;
+  const ctx = canvas.getContext('2d');
+  const RW = canvas.width/dpr, RH = canvas.height/dpr;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,RW,RH);
+
+  const pad = {t:16, r:16, b:30, l:28};
+  const iW = RW-pad.l-pad.r, iH = RH-pad.t-pad.b;
+
+  const display = filter ? results.filter(r=>(r.factors?.test_type||'finger')===filter) : results;
+  const timeBase = filter ? display : results;
+  if(!timeBase.length) return;
+
+  const tMin = new Date(timeBase[0].tested_at).getTime();
+  const tMax = new Date(timeBase[timeBase.length-1].tested_at).getTime();
+  const tRange = Math.max(tMax-tMin, 3_600_000);
+  const tx = t  => pad.l + ((new Date(t).getTime()-tMin)/tRange)*iW;
+  const ty = s  => pad.t + iH - (s/4)*iH; // 0=bottom(good), 4=top(bad)
+
+  // Grid
+  for(let s=0;s<=4;s++){
+    const y=ty(s);
+    ctx.strokeStyle = s===0?'rgba(0,255,204,0.12)':s===4?'rgba(255,34,68,0.12)':'rgba(255,255,255,0.05)';
+    ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(pad.l,y); ctx.lineTo(pad.l+iW,y); ctx.stroke();
+    ctx.fillStyle=s===0?'#00ffcc66':s===4?'#ff224466':'rgba(255,255,255,0.25)';
+    ctx.font='8px "Courier New",monospace'; ctx.textAlign='right';
+    ctx.fillText(s,pad.l-4,y+3);
+  }
+  // X-axis dates
+  const nL=Math.min(5,Math.max(2,Math.floor(iW/55)));
+  ctx.fillStyle='rgba(255,255,255,0.22)'; ctx.font='8px "Courier New",monospace'; ctx.textAlign='center';
+  for(let i=0;i<=nL;i++){
+    const t=tMin+(i/nL)*tRange, x=pad.l+(i/nL)*iW;
+    const d=new Date(t);
+    ctx.fillText(`${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}`,x,pad.t+iH+20);
+  }
+
+  // Medication markers
+  (medLogs||[]).forEach(m=>{
+    const x=tx(m.taken_at);
+    if(x<pad.l-4||x>pad.l+iW+4) return;
+    ctx.save(); ctx.strokeStyle='#60a5fa'; ctx.lineWidth=1;
+    ctx.setLineDash([2,3]); ctx.globalAlpha=0.5;
+    ctx.beginPath(); ctx.moveTo(x,pad.t); ctx.lineTo(x,pad.t+iH); ctx.stroke();
+    ctx.setLineDash([]); ctx.globalAlpha=0.8;
+    ctx.font='11px sans-serif'; ctx.textAlign='center';
+    ctx.fillText('💊',x,pad.t+iH+14); ctx.restore();
+  });
+
+  // Lines + dots per test type
+  const byType = {};
+  display.forEach(r=>{const t=r.factors?.test_type||'finger';(byType[t]||(byType[t]=[])).push(r);});
+  Object.entries(byType).forEach(([type,pts])=>{
+    const lc = TYPE_COLORS[type]||'#fff';
+    if(pts.length>1){
+      ctx.save(); ctx.strokeStyle=lc; ctx.lineWidth=1.8; ctx.globalAlpha=0.3;
+      ctx.beginPath();
+      pts.forEach((r,i)=>i===0?ctx.moveTo(tx(r.tested_at),ty(r.score)):ctx.lineTo(tx(r.tested_at),ty(r.score)));
+      ctx.stroke(); ctx.restore();
+    }
+    pts.forEach(r=>{
+      const x=tx(r.tested_at), y=ty(r.score);
+      const dc=SCORE_COLORS[r.score]||'#fff';
+      ctx.save(); ctx.fillStyle=dc; ctx.shadowBlur=10; ctx.shadowColor=dc;
+      ctx.beginPath(); ctx.arc(x,y,5,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle='#fff'; ctx.shadowBlur=0; ctx.globalAlpha=0.85;
+      ctx.beginPath(); ctx.arc(x,y,2,0,Math.PI*2); ctx.fill();
+      ctx.restore();
+    });
+  });
+}
+
+// ── Log list (interleaved results + med logs) ─
+function renderHistList() {
+  const listEl = document.getElementById('historyList');
+  if(!histResults.length&&!histMedLogs.length){listEl.innerHTML='<div class="hist-empty">아직 기록이 없습니다.</div>';return;}
+  const TYPE_LABEL={finger:'3.4 FINGER',hand:'3.5 HAND',pronation:'3.6 PRONATION',tremor:'3.14 TREMOR',toe:'3.7 TOE',leg:'3.8 LEG'};
+  const SEVERITY=['정상','경미','중등도','심각','최중증'];
+
+  const items=[
+    ...[...histResults].reverse().map(r=>({...r,_med:false,_t:r.tested_at})),
+    ...histMedLogs.map(m=>({...m,_med:true,_t:m.taken_at}))
+  ].sort((a,b)=>new Date(b._t)-new Date(a._t));
+
+  listEl.innerHTML = items.map(item=>{
+    const d=new Date(item._t);
+    const ds=`${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+    if(item._med) return `<div class="hist-row">
+      <div class="hist-score" style="background:rgba(96,165,250,0.12);border:2px solid #60a5fa;color:#60a5fa;font-size:1rem">💊</div>
+      <div class="hist-meta"><div class="hist-date">${ds}</div>
+      <div class="hist-detail">${item.medication}${item.dose_mg?` ${item.dose_mg}mg`:''}</div></div></div>`;
+    const c=SCORE_COLORS[item.score]||'#fff';
+    const type=item.factors?.test_type||'finger';
     return `<div class="hist-row">
-      <div class="hist-score" style="background:${c}22;border:2px solid ${c};color:${c}">${r.score}</div>
-      <div class="hist-meta">
-        <div class="hist-date">${dateStr} &nbsp;<span class="hist-mode">${r.mode==='live'?'LIVE':'VIDEO'}</span></div>
-        <div class="hist-detail">${labels[r.score]} · ${r.n_taps??'-'}회 · ${r.frequency?.toFixed(1)??'-'}Hz · fatig ${r.fatigability?.toFixed(0)??'-'}%</div>
-      </div>
-    </div>`;
+      <div class="hist-score" style="background:${c}22;border:2px solid ${c};color:${c}">${item.score}</div>
+      <div class="hist-meta"><div class="hist-date">${ds}<span class="hist-type-badge">${TYPE_LABEL[type]||type}</span></div>
+      <div class="hist-detail">${SEVERITY[item.score]} · ${item.n_taps??'-'}회 · ${item.frequency?.toFixed(1)??'-'}Hz</div></div></div>`;
   }).join('');
+}
+
+// ── PDF Report ────────────────────────────────
+function generateReport() {
+  if(!histResults.length){ alert('기록이 없습니다. 먼저 검사를 완료하고 저장하세요.'); return; }
+  const canvas = document.getElementById('histChartCanvas');
+  const chartImg = canvas?.toDataURL('image/png') || '';
+  const dateStr = new Date().toLocaleDateString('ko-KR');
+  const email = currentUser?.email || 'Guest';
+  const TYPE_LABEL_EN={finger:'3.4 Finger Tapping',hand:'3.5 Hand Movements',pronation:'3.6 Pronation-Supination',tremor:'3.14 Rest Tremor',toe:'3.7 Toe Tapping',leg:'3.8 Leg Agility'};
+  const SEV_EN=['Normal','Mild','Moderate','Severe','Very severe'];
+
+  const byType={};
+  histResults.forEach(r=>{const t=r.factors?.test_type||'finger';(byType[t]||(byType[t]=[])).push(r);});
+  const summaryRows=Object.entries(byType).map(([t,arr])=>{
+    const avg=(arr.reduce((a,r)=>a+r.score,0)/arr.length).toFixed(1);
+    const last=[...arr].sort((a,b)=>new Date(b.tested_at)-new Date(a.tested_at))[0].score;
+    return `<tr><td>${TYPE_LABEL_EN[t]||t}</td><td>${arr.length}</td><td>${last}/4</td><td>${avg}/4</td></tr>`;
+  }).join('');
+  const resultRows=[...histResults].sort((a,b)=>new Date(b.tested_at)-new Date(a.tested_at)).slice(0,20).map(r=>{
+    const d=new Date(r.tested_at);
+    const ds=`${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')}`;
+    const t=r.factors?.test_type||'finger';
+    return `<tr><td>${ds}</td><td>${TYPE_LABEL_EN[t]||t}</td><td>${r.score}/4</td><td>${SEV_EN[r.score]}</td><td>${r.frequency?.toFixed(1)||'-'} Hz</td></tr>`;
+  }).join('');
+  const medRows=histMedLogs.sort((a,b)=>new Date(b.taken_at)-new Date(a.taken_at)).slice(0,10).map(m=>{
+    const d=new Date(m.taken_at);
+    const ds=`${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+    return `<tr><td>${ds}</td><td>${m.medication}</td><td>${m.dose_mg?m.dose_mg+' mg':'—'}</td></tr>`;
+  }).join('');
+
+  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>ParkiCheck Report</title>
+  <style>body{font-family:Arial,sans-serif;color:#111;padding:28px;max-width:720px;margin:0 auto}
+  h1{font-size:1.4rem;border-bottom:2px solid #111;padding-bottom:8px;margin-bottom:4px}
+  .sub{font-size:0.8rem;color:#666;margin-bottom:20px}
+  h2{font-size:0.95rem;margin:22px 0 8px;color:#333;border-left:3px solid #000;padding-left:8px}
+  table{width:100%;border-collapse:collapse;font-size:0.82rem;margin-bottom:10px}
+  th{background:#f4f4f4;padding:6px 10px;text-align:left;font-size:0.75rem;border-bottom:2px solid #ddd}
+  td{padding:5px 10px;border-bottom:1px solid #eee}
+  img{width:100%;border:1px solid #ddd;border-radius:4px;margin-bottom:4px}
+  .footer{font-size:0.7rem;color:#999;margin-top:28px;border-top:1px solid #eee;padding-top:10px}
+  @media print{button{display:none!important}}</style></head><body>
+  <h1>ParkiCheck — UPDRS Motor Assessment Report</h1>
+  <div class="sub">Patient: ${email} &nbsp;|&nbsp; Report Date: ${dateStr} &nbsp;|&nbsp; Total Assessments: ${histResults.length}</div>
+  ${chartImg?`<h2>Score History</h2><img src="${chartImg}" alt="chart">`:''}
+  <h2>Summary by Test Type</h2>
+  <table><thead><tr><th>Test</th><th>Count</th><th>Last Score</th><th>Average</th></tr></thead><tbody>${summaryRows}</tbody></table>
+  ${medRows?`<h2>Medication Log</h2><table><thead><tr><th>Date/Time</th><th>Medication</th><th>Dose</th></tr></thead><tbody>${medRows}</tbody></table>`:''}
+  <h2>Recent Results (last 20)</h2>
+  <table><thead><tr><th>Date</th><th>Test</th><th>Score</th><th>Severity</th><th>Frequency</th></tr></thead><tbody>${resultRows}</tbody></table>
+  <div class="footer">ParkiCheck is a home-based UPDRS motor assessment tool for personal symptom tracking. This report does not constitute medical diagnosis — consult your neurologist for clinical evaluation.</div>
+  <script>window.onload=()=>setTimeout(()=>window.print(),400)</script></body></html>`;
+
+  const w=window.open('','_blank','width=820,height=640');
+  if(w){w.document.write(html);w.document.close();}
 }
 
 // ═══════════════════════════════════════════
