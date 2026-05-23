@@ -184,6 +184,21 @@
     .pmenu-item:hover { background:rgba(255,255,255,0.06); color:#fff; }
     .pmenu-item.danger { color:#ff6666; }
 
+    /* ── Assessment Selector ── */
+    #assessSelector { position:absolute; inset:0; z-index:95; background:rgba(3,3,10,0.92); backdrop-filter:blur(16px); display:flex; flex-direction:column; align-items:center; justify-content:center; padding:32px 24px; transition:opacity 0.4s; }
+    .assess-title { font-size:0.62rem; letter-spacing:5px; color:rgba(255,255,255,0.3); margin-bottom:28px; }
+    .assess-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; max-width:520px; width:100%; }
+    .assess-card { background:rgba(10,12,24,0.9); border:1px solid rgba(255,255,255,0.07); border-radius:16px; padding:22px 20px; cursor:pointer; transition:all 0.22s; display:flex; flex-direction:column; gap:6px; position:relative; overflow:hidden; }
+    .assess-card:hover { border-color:var(--ac); background:rgba(15,18,34,0.95); transform:translateY(-2px); }
+    .assess-card::before { content:''; position:absolute; inset:0; background:radial-gradient(circle at 50% 0%, var(--ac) 0%, transparent 60%); opacity:0; transition:opacity 0.3s; }
+    .assess-card:hover::before { opacity:0.06; }
+    .assess-num { font-size:0.58rem; letter-spacing:3px; color:var(--ac); opacity:0.7; }
+    .assess-name { font-size:0.82rem; letter-spacing:2px; color:#fff; font-weight:bold; }
+    .assess-desc { font-size:0.65rem; color:rgba(255,255,255,0.35); line-height:1.55; }
+    .assess-dot { width:28px; height:3px; border-radius:2px; margin-top:8px; background:var(--ac); box-shadow:0 0 8px var(--ac); }
+    .assess-back { margin-top:20px; font-size:0.65rem; letter-spacing:2px; color:rgba(255,255,255,0.25); cursor:pointer; border:none; background:none; font-family:'Courier New',monospace; transition:color 0.2s; }
+    .assess-back:hover { color:rgba(255,255,255,0.5); }
+
     /* ── History panel ── */
     #historyOverlay { position:absolute; inset:0; z-index:80; background:rgba(0,0,0,0.7); backdrop-filter:blur(10px); overflow-y:auto; display:flex; justify-content:center; align-items:flex-start; padding:60px 20px 40px; transition:opacity 0.4s; }
     .history-card { background:rgba(6,8,18,0.96); border:1px solid var(--border); border-radius:20px; padding:30px; width:100%; max-width:560px; }
@@ -359,6 +374,38 @@
     <div class="fi"><div class="dot" style="background:#ff00ff;box-shadow:0 0 6px #ff00ff"></div>MIDDLE</div>
     <div class="fi"><div class="dot" style="background:#ffff00;box-shadow:0 0 6px #ffff00"></div>RING</div>
     <div class="fi"><div class="dot" style="background:#ff6600;box-shadow:0 0 6px #ff6600"></div>PINKY</div>
+  </div>
+
+  <!-- Assessment Selector -->
+  <div id="assessSelector" class="hidden">
+    <div class="assess-title">SELECT ASSESSMENT</div>
+    <div class="assess-grid">
+      <div class="assess-card" style="--ac:#00ffcc" onclick="selectAssessment('finger')">
+        <div class="assess-num">UPDRS 3.4</div>
+        <div class="assess-name">FINGER TAPPING</div>
+        <div class="assess-desc">검지–엄지 탭 빈도·리듬·진폭·피로도</div>
+        <div class="assess-dot"></div>
+      </div>
+      <div class="assess-card" style="--ac:#ff00ff" onclick="selectAssessment('hand')">
+        <div class="assess-num">UPDRS 3.5</div>
+        <div class="assess-name">HAND MOVEMENTS</div>
+        <div class="assess-desc">주먹 쥐었다 펴기 속도·진폭·대칭성</div>
+        <div class="assess-dot"></div>
+      </div>
+      <div class="assess-card" style="--ac:#ff8800" onclick="selectAssessment('pronation')">
+        <div class="assess-num">UPDRS 3.6</div>
+        <div class="assess-name">PRONATION-SUPINATION</div>
+        <div class="assess-desc">손 뒤집기 빈도·진폭·리듬</div>
+        <div class="assess-dot"></div>
+      </div>
+      <div class="assess-card" style="--ac:#a78bfa; opacity:0.45; cursor:not-allowed" onclick="">
+        <div class="assess-num">COMING SOON</div>
+        <div class="assess-name">TREMOR</div>
+        <div class="assess-desc">정지 시 손 떨림 주파수·진폭 분석</div>
+        <div class="assess-dot"></div>
+      </div>
+    </div>
+    <button class="assess-back" onclick="setMode('free')">← BACK TO FREE PLAY</button>
   </div>
 
   <!-- UPDRS live test -->
@@ -635,8 +682,18 @@ let appMode = 'free';
 
 // UPDRS live test state
 let testState = 'idle';
-let graphPulse = 0; // pulse ring decay on latest graph point
+let testType  = 'finger'; // 'finger' | 'hand' | 'pronation'
+let graphPulse = 0;
 const testData = { taps:[], startTime:0, arrests:0, lastTapT:0, currentMaxDist:0, handSizeRef:0 };
+
+// 3.5 Hand Movements detection state
+const prevHandOpen = {}; // key → bool
+const handCycleMs  = {}; // key → last cycle timestamp
+
+// 3.6 Pronation-Supination detection state
+const prevPalmSign = {}; // key → +1/-1 (facing / away)
+const pronationMs  = {}; // key → last flip timestamp
+const pronationAmp = {}; // key → max deviation this half-cycle
 
 // Video analysis
 let pendingResolve = null;   // resolves after each hands.onResults in video mode
@@ -721,6 +778,34 @@ class BgWave {
   constructor(x,y,color){this.x=x;this.y=y;this.color=color;this.r=30;this.life=1;this.maxR=Math.hypot(window.innerWidth,window.innerHeight)*0.85;}
   update(){this.r+=20;this.life=Math.max(0,1-this.r/this.maxR);}
   draw(ctx){if(this.life<=0)return;ctx.save();ctx.globalAlpha=this.life*0.11;ctx.strokeStyle=this.color;ctx.lineWidth=70*this.life+12;ctx.shadowBlur=60;ctx.shadowColor=this.color;ctx.beginPath();ctx.arc(this.x,this.y,this.r,0,Math.PI*2);ctx.stroke();ctx.restore();}
+  isDead(){return this.life<=0;}
+}
+
+// ── 3.5 Hand Movements effects ──────────────
+class BloomPetal {
+  constructor(x,y,angle,size){this.x=x;this.y=y;this.angle=angle;this.len=size*(40+Math.random()*50);this.life=1;this.color='#ff00ff';}
+  update(){this.life-=0.038;}
+  draw(ctx){if(this.life<=0)return;const ex=this.x+Math.cos(this.angle)*this.len*this.life,ey=this.y+Math.sin(this.angle)*this.len*this.life;ctx.save();ctx.globalAlpha=this.life*0.85;ctx.strokeStyle=this.color;ctx.lineWidth=4*this.life+1;ctx.shadowBlur=14;ctx.shadowColor=this.color;ctx.beginPath();ctx.moveTo(this.x,this.y);ctx.lineTo(ex,ey);ctx.stroke();ctx.fillStyle='#fff';ctx.globalAlpha=this.life*0.9;ctx.beginPath();ctx.arc(ex,ey,3*this.life,0,Math.PI*2);ctx.fill();ctx.restore();}
+  isDead(){return this.life<=0;}
+}
+class ImplodeRing {
+  constructor(x,y){this.x=x;this.y=y;this.r=60;this.life=1;}
+  update(){this.r=Math.max(4,this.r*0.82);this.life-=0.07;}
+  draw(ctx){if(this.life<=0)return;ctx.save();ctx.globalAlpha=this.life*0.7;ctx.strokeStyle='#ff77ff';ctx.lineWidth=2;ctx.shadowBlur=20;ctx.shadowColor='#ff00ff';ctx.beginPath();ctx.arc(this.x,this.y,this.r,0,Math.PI*2);ctx.stroke();ctx.restore();}
+  isDead(){return this.life<=0;}
+}
+
+// ── 3.6 Pronation-Supination effects ────────
+class SpinSpoke {
+  constructor(x,y,angle,delay){this.x=x;this.y=y;this.angle=angle;this.len=55+Math.random()*60;this.life=1;this.timer=delay;}
+  update(){if(this.timer>0){this.timer--;return;}this.life-=0.045;}
+  draw(ctx){if(this.timer>0||this.life<=0)return;const ex=this.x+Math.cos(this.angle)*this.len,ey=this.y+Math.sin(this.angle)*this.len;ctx.save();ctx.globalAlpha=this.life*0.9;ctx.strokeStyle='#ff8800';ctx.lineWidth=3*this.life+0.5;ctx.shadowBlur=18;ctx.shadowColor='#ff8800';ctx.beginPath();ctx.moveTo(this.x,this.y);ctx.lineTo(ex,ey);ctx.stroke();ctx.fillStyle='#ffbb44';ctx.globalAlpha=this.life;ctx.beginPath();ctx.arc(ex,ey,4*this.life,0,Math.PI*2);ctx.fill();ctx.restore();}
+  isDead(){return this.life<=0;}
+}
+class SpinRing {
+  constructor(x,y,size=1){this.x=x;this.y=y;this.r=8;this.maxR=(70+Math.random()*40)*size;this.life=1;}
+  update(){this.r+=7;this.life=Math.max(0,1-this.r/this.maxR);}
+  draw(ctx){if(this.life<=0)return;ctx.save();ctx.globalAlpha=this.life*0.8;ctx.strokeStyle='#ff8800';ctx.lineWidth=3*this.life;ctx.shadowBlur=22;ctx.shadowColor='#ff8800';ctx.beginPath();ctx.arc(this.x,this.y,this.r,0,Math.PI*2);ctx.stroke();ctx.restore();}
   isDead(){return this.life<=0;}
 }
 
@@ -975,7 +1060,7 @@ function showResults(durationSec = 10, title = 'UPDRS 3.4 — FINGER TAPPING') {
     max_amplitude: parseFloat(maxAmp.toFixed(4)),
     fatigability: parseFloat(fatig.toFixed(1)),
     confidence, duration_sec: parseFloat(durationSec.toFixed(1)),
-    factors,
+    factors: {...factors, test_type: testType},
   };
   // Reset save UI
   const saveBtn = el('saveResultBtn');
@@ -1030,6 +1115,60 @@ function triggerTap(x, y, fi) {
 }
 
 // ═══════════════════════════════════════════
+// 3.5 HAND MOVEMENTS TRIGGER
+// ═══════════════════════════════════════════
+function triggerHandOpen(x, y, normAmp) {
+  const n = 8;
+  for(let i=0;i<n;i++) effects.push(new BloomPetal(x,y,(i/n)*Math.PI*2,normAmp*2.5+0.5));
+  effects.push(new Shockwave(x,y,'#ff00ff',0,1.1), new GlowPulse(x,y,'#ff00ff'));
+  bgWaves.push(new BgWave(x,y,'#ff00ff'));
+  if(testState==='running'){
+    const now=Date.now(), key=`h-${x|0}`;
+    const elapsed=now-(handCycleMs[key]||now);
+    if(testData.taps.length>0&&elapsed>600) testData.arrests++;
+    testData.taps.push({t:now,amplitude:normAmp});
+    handCycleMs[key]=now;
+    testData.lastTapT=now;
+    document.getElementById('testTapCount').textContent=testData.taps.length;
+    graphPulse=1;
+  }
+  combo=(Date.now()-lastTapTime<COMBO_WINDOW)?combo+1:1;
+  lastTapTime=Date.now(); tapCount++;
+  tapHistory.push(Date.now()); if(tapHistory.length>10)tapHistory.shift();
+  if(combo>=3){effects.push(new Lightning(x,y,'#ff00ff'));}
+  playTap(440,combo);
+  if(appMode!=='video') updateFreeHUD();
+}
+function triggerHandClose(x, y) {
+  effects.push(new ImplodeRing(x,y), new ScreenFlash('#ff00ff'));
+}
+
+// ═══════════════════════════════════════════
+// 3.6 PRONATION-SUPINATION TRIGGER
+// ═══════════════════════════════════════════
+function triggerFlip(x, y, flipAmp) {
+  const n=8;
+  for(let i=0;i<n;i++) effects.push(new SpinSpoke(x,y,(i/n)*Math.PI*2,i*2));
+  effects.push(new SpinRing(x,y,1), new SpinRing(x,y,1.4), new ScreenFlash('#ff8800'));
+  bgWaves.push(new BgWave(x,y,'#ff8800'));
+  if(testState==='running'){
+    const now=Date.now();
+    const elapsed=now-testData.lastTapT;
+    if(testData.taps.length>0&&elapsed>800) testData.arrests++;
+    testData.taps.push({t:now,amplitude:flipAmp});
+    testData.lastTapT=now;
+    document.getElementById('testTapCount').textContent=testData.taps.length;
+    graphPulse=1;
+  }
+  combo=(Date.now()-lastTapTime<COMBO_WINDOW)?combo+1:1;
+  lastTapTime=Date.now(); tapCount++;
+  tapHistory.push(Date.now()); if(tapHistory.length>10)tapHistory.shift();
+  if(combo>=3){for(let i=0;i<6;i++) effects.push(new SpinSpoke(x,y,(i/6)*Math.PI*2+0.3,i*3));}
+  playTap(330,combo);
+  if(appMode!=='video') updateFreeHUD();
+}
+
+// ═══════════════════════════════════════════
 // FREE PLAY HUD
 // ═══════════════════════════════════════════
 let comboResetTimer = null;
@@ -1056,12 +1195,33 @@ function setMode(mode) {
   document.getElementById('hud').style.opacity    = dim ? '0.15' : '1';
   document.getElementById('legend').style.opacity = dim ? '0.15' : '1';
 
-  document.getElementById('updrsTestOverlay').classList.toggle('hidden', mode!=='updrs');
+  document.getElementById('assessSelector').classList.toggle('hidden', mode!=='updrs');
+  document.getElementById('updrsTestOverlay').classList.add('hidden'); // shown by selectAssessment
   document.getElementById('videoDropOverlay').classList.toggle('hidden',  mode!=='video');
 
   if(mode!=='updrs') { testState='idle'; document.getElementById('testHud').classList.remove('visible'); document.getElementById('countdown').classList.remove('visible'); }
   if(mode!=='video') { document.getElementById('videoProgressOverlay').classList.add('hidden'); }
   document.getElementById('resultsOverlay').classList.remove('visible');
+}
+
+// ═══════════════════════════════════════════
+// ASSESSMENT SELECTION
+// ═══════════════════════════════════════════
+const ASSESS_META = {
+  finger:    {num:'3.4', name:'FINGER TAPPING',       color:'#00ffcc', desc:'검지를 엄지에 최대한 빠르고 넓게 탭하세요.\n10초간 측정합니다.'},
+  hand:      {num:'3.5', name:'HAND MOVEMENTS',        color:'#ff00ff', desc:'주먹을 완전히 쥐었다가 완전히 펴세요.\n최대한 빠르고 크게 10초간 반복합니다.'},
+  pronation: {num:'3.6', name:'PRONATION-SUPINATION',  color:'#ff8800', desc:'손바닥이 위-아래를 향하도록 뒤집으세요.\n팔꿈치를 구부린 채 10초간 반복합니다.'},
+};
+function selectAssessment(type) {
+  testType = type;
+  const m = ASSESS_META[type];
+  document.getElementById('assessSelector').classList.add('hidden');
+  const ol = document.getElementById('updrsTestOverlay');
+  ol.querySelector('.ov-h2').textContent = `UPDRS ${m.num}`;
+  ol.querySelector('.ov-sub').textContent = m.name;
+  ol.querySelector('.ov-p').innerHTML = m.desc.replace(/\n/g,'<br>');
+  ol.querySelector('.ov-h2').style.color = m.color;
+  ol.classList.remove('hidden');
 }
 
 // ═══════════════════════════════════════════
@@ -1089,7 +1249,8 @@ function endTest() {
   if(testState!=='running') return;
   testState='done';
   document.getElementById('testHud').classList.remove('visible');
-  showResults(10, 'UPDRS 3.4 — LIVE TEST');
+  const m = ASSESS_META[testType] || ASSESS_META.finger;
+  showResults(10, `UPDRS ${m.num} — ${m.name}`);
 }
 function updateTimerRing() {
   if(testState!=='running') return;
@@ -1269,6 +1430,80 @@ function detectTaps(landmarks, handIdx) {
 }
 
 // ═══════════════════════════════════════════
+// 3.5 HAND MOVEMENTS DETECTION
+// ═══════════════════════════════════════════
+const HAND_OPEN_THRESH  = 0.14; // avg fingertip-palm dist → open
+const HAND_CLOSE_THRESH = 0.07;
+const HAND_COOLDOWN     = 250;
+
+function detectHandMovements(landmarks, handIdx) {
+  const W=canvas.width, H=canvas.height;
+  const mcps=[5,9,13,17].map(i=>landmarks[i]);
+  const palm={x:mcps.reduce((a,m)=>a+m.x,0)/4, y:mcps.reduce((a,m)=>a+m.y,0)/4};
+  const palmX=(1-palm.x)*W, palmY=palm.y*H;
+
+  // Hand size ref (wrist→MCP9)
+  const wrist=landmarks[0], mcp9=landmarks[9];
+  const hs=Math.sqrt((wrist.x-mcp9.x)**2+(wrist.y-mcp9.y)**2);
+  if(testState==='running'&&hs>0.05)
+    testData.handSizeRef=testData.handSizeRef?testData.handSizeRef*0.9+hs*0.1:hs;
+
+  // Average distance: palm center → 4 fingertips (normalized by hand size)
+  const tips=[8,12,16,20].map(i=>landmarks[i]);
+  const rawDist=tips.reduce((a,t)=>a+Math.sqrt((t.x-palm.x)**2+(t.y-palm.y)**2),0)/4;
+  const normDist=testData.handSizeRef>0?rawDist/testData.handSizeRef:rawDist/0.18;
+
+  const key=`hm-${handIdx}`, now=Date.now();
+  const wasOpen=prevHandOpen[key]||false;
+  const isOpen=normDist>HAND_OPEN_THRESH/0.18, isClosed=normDist<HAND_CLOSE_THRESH/0.18;
+  if(testState==='running') testData.currentMaxDist=Math.max(testData.currentMaxDist,normDist);
+
+  if(isOpen&&!wasOpen&&(now-(handCycleMs[key]||0))>HAND_COOLDOWN){
+    triggerHandOpen(palmX,palmY,testData.currentMaxDist||normDist);
+    testData.currentMaxDist=0; handCycleMs[key]=now;
+  }
+  if(isClosed&&wasOpen) triggerHandClose(palmX,palmY);
+  prevHandOpen[key]=isOpen;
+}
+
+// ═══════════════════════════════════════════
+// 3.6 PRONATION-SUPINATION DETECTION
+// ═══════════════════════════════════════════
+const FLIP_COOLDOWN = 300;
+
+function detectPronation(landmarks, handIdx) {
+  const W=canvas.width, H=canvas.height;
+  // Palm center for display
+  const wrist=landmarks[0];
+  const cx=(1-wrist.x)*W, cy=wrist.y*H;
+
+  // Palm normal: cross product of (wrist→MCP5) × (wrist→MCP17) — z component
+  const mcp5=landmarks[5], mcp17=landmarks[17];
+  const v1={x:mcp5.x-wrist.x, y:mcp5.y-wrist.y};
+  const v2={x:mcp17.x-wrist.x, y:mcp17.y-wrist.y};
+  const normalZ = v1.x*v2.y - v1.y*v2.x; // 2D cross product
+
+  const key=`pr-${handIdx}`, now=Date.now();
+  const sign=normalZ>=0?1:-1;
+  const prev=prevPalmSign[key]||0;
+
+  // Track max deviation magnitude in current half-cycle
+  pronationAmp[key]=Math.max(pronationAmp[key]||0, Math.abs(normalZ));
+
+  if(prev!==0&&sign!==prev&&(now-(pronationMs[key]||0))>FLIP_COOLDOWN){
+    const ampNorm=Math.min(1,pronationAmp[key]*8); // normalize ~0.12 max → 1.0
+    triggerFlip(cx,cy,ampNorm);
+    pronationMs[key]=now; pronationAmp[key]=0;
+  }
+  prevPalmSign[key]=sign;
+
+  if(testState==='running'){
+    const hs=Math.sqrt((wrist.x-landmarks[9].x)**2+(wrist.y-landmarks[9].y)**2);
+    if(hs>0.05) testData.handSizeRef=testData.handSizeRef?testData.handSizeRef*0.9+hs*0.1:hs;
+  }
+}
+
+// ═══════════════════════════════════════════
 // HAND SKELETON
 // ═══════════════════════════════════════════
 function drawHand(landmarks, activeFingers, opts = {}) {
@@ -1312,7 +1547,11 @@ function frame() {
 
   if(handResults && handResults.multiHandLandmarks && appMode!=='video') {
     handResults.multiHandLandmarks.forEach((lm,hi)=>{
-      const active=detectTaps(lm,hi); drawHand(lm,active);
+      let active=[false,false,false,false];
+      if(testType==='hand')       { detectHandMovements(lm,hi); }
+      else if(testType==='pronation') { detectPronation(lm,hi); }
+      else                        { active=detectTaps(lm,hi); }
+      drawHand(lm,active);
     });
   }
 
