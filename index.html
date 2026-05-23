@@ -613,12 +613,21 @@ async function doSignup() {
   const { data, error } = await supa.auth.signUp({ email, password: pw });
   document.getElementById('signupBtn').textContent = 'CREATE ACCOUNT';
   if (error) { errEl.textContent = error.message; return; }
-  if (data.session) {
-    showAssessSelector();
-  } else {
-    errEl.style.color = '#00ffcc';
-    errEl.textContent = '가입 완료! 이메일을 확인해 인증 후 로그인하세요.';
-  }
+
+  // autoconfirm ON → session returned immediately
+  if (data.session) { showAssessSelector(); return; }
+
+  // autoconfirm OFF → try immediate login anyway (works if email is pre-confirmed)
+  const { error: loginErr } = await supa.auth.signInWithPassword({ email, password: pw });
+  if (!loginErr) { showAssessSelector(); return; }
+
+  // Email verification required — switch to login tab, pre-fill email
+  switchAuthTab('login');
+  document.getElementById('loginEmail').value = email;
+  document.getElementById('loginPw').value = pw;
+  const loginErrEl = document.getElementById('loginErr');
+  loginErrEl.style.color = '#00ffcc';
+  loginErrEl.textContent = '가입 완료! 이메일 인증 후 LOGIN을 눌러주세요.';
 }
 
 async function doSignOut() {
