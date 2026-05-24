@@ -1915,6 +1915,7 @@ function startTest() {
   if(testType==='face'){
     faceBlinkBuffer.length=0; faceExprBuffer.length=0;
     faceBlinkInProgress=false; faceLastBlinkMs=0; faceLastEAR={left:1,right:1};
+    faceEdgeCache=null;
   }
   if(testType==='gait'){
     gaitSteps.length=0; gaitArmSwings.length=0;
@@ -2697,8 +2698,11 @@ function loadFaceMeshModel() {
       faceMeshModel=new FaceMesh({locateFile:f=>`https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}`});
       faceMeshModel.setOptions({maxNumFaces:1,refineLandmarks:true,minDetectionConfidence:0.7,minTrackingConfidence:0.5});
       faceMeshModel.onResults(r=>{ faceMeshResults=r; });
-      // Capture dense tesselation constant exposed by the CDN bundle
-      if(typeof FACEMESH_TESSELATION!=='undefined') faceMeshTess=[...FACEMESH_TESSELATION];
+      // Try all possible global names for FACEMESH_TESSELATION
+      const _tess = window.FACEMESH_TESSELATION ||
+                    window.facemesh?.FACEMESH_TESSELATION ||
+                    window.faceMesh?.FACEMESH_TESSELATION;
+      if(_tess) faceMeshTess=[..._tess];
       faceMeshModelLoaded=true;
     }catch(e){ console.error('FaceMesh init:',e); }
   };
@@ -2822,6 +2826,9 @@ function showFaceResults() {
   if(!currentUser) saveMsg.textContent='로그인하면 기록이 저장됩니다';
 }
 
+// Face edge cache — computed once from first frame landmarks (near-neighbor distance threshold)
+let faceEdgeCache = null;
+
 // Face Mesh connection edge pairs (MediaPipe Face Mesh standard)
 const FM_OVAL =[[10,338],[338,297],[297,332],[332,284],[284,251],[251,389],[389,356],[356,454],[454,323],[323,361],[361,288],[288,397],[397,365],[365,379],[379,378],[378,400],[400,377],[377,152],[152,148],[148,176],[176,149],[149,150],[150,136],[136,172],[172,58],[58,132],[132,93],[93,234],[234,127],[127,162],[162,21],[21,54],[54,103],[103,67],[67,109],[109,10]];
 const FM_L_EYE=[[33,7],[7,163],[163,144],[144,145],[145,153],[153,154],[154,155],[155,133],[133,173],[173,157],[157,158],[158,159],[159,160],[160,161],[161,246],[246,33]];
@@ -2841,12 +2848,38 @@ function drawFaceMesh(lm) {
 
   ctx.save();
 
-  // ① Dense tesselation — batch draw for performance
+  // ① Dense tesselation if available (captured from CDN global)
   if(faceMeshTess&&faceMeshTess.length){
-    ctx.strokeStyle='rgba(232,121,249,0.055)'; ctx.lineWidth=0.6; ctx.shadowBlur=0;
+    ctx.strokeStyle='rgba(232,121,249,0.08)'; ctx.lineWidth=0.7; ctx.shadowBlur=0;
     ctx.beginPath();
     faceMeshTess.forEach(([a,b])=>{ ctx.moveTo(lx(a),ly(a)); ctx.lineTo(lx(b),ly(b)); });
     ctx.stroke();
+  } else {
+    // Fallback: compute near-neighbor edges ONCE from first landmarks frame, then cache
+    if(!faceEdgeCache){
+      // O(468²) one-time build — cached forever until test resets
+      faceEdgeCache=[];
+      const THRESH=0.052; // ~5% of face width in normalized coords → ~5-8 neighbors/point
+      for(let i=0;i<468;i++){
+        for(let j=i+1;j<468;j++){
+          const dx=lm[i].x-lm[j].x, dy=lm[i].y-lm[j].y;
+          if(dx*dx+dy*dy < THRESH*THRESH) faceEdgeCache.push([i,j]);
+        }
+      }
+    }
+    // Draw mesh lines
+    ctx.strokeStyle='rgba(232,121,249,0.11)'; ctx.lineWidth=0.7; ctx.shadowBlur=0;
+    ctx.beginPath();
+    faceEdgeCache.forEach(([a,b])=>{ ctx.moveTo(lx(a),ly(a)); ctx.lineTo(lx(b),ly(b)); });
+    ctx.stroke();
+    // Landmark dots on top
+    ctx.fillStyle='rgba(232,121,249,0.32)';
+    ctx.beginPath();
+    for(let i=0;i<468;i++){
+      const x=lx(i),y=ly(i);
+      ctx.moveTo(x+1.4,y); ctx.arc(x,y,1.4,0,Math.PI*2);
+    }
+    ctx.fill();
   }
 
   // ② Face oval
