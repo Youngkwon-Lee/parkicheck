@@ -2884,19 +2884,20 @@ function drawFaceMesh(lm) {
     ctx.fill();
   }
 
-  // ② Face oval — expanded 15% outward from centroid for wider silhouette
+  // ② Face silhouette — dynamic ellipse from actual landmark bounding box
   {
-    const pts=FM_OVAL_PTS.map(i=>({x:lx(i),y:ly(i)}));
-    const cx=pts.reduce((s,p)=>s+p.x,0)/pts.length;
-    const cy=pts.reduce((s,p)=>s+p.y,0)/pts.length;
-    const EXP=1.15;
-    ctx.strokeStyle='rgba(232,121,249,0.55)'; ctx.lineWidth=2; ctx.shadowBlur=10; ctx.shadowColor='#e879f9';
+    let minX=Infinity, maxX=-Infinity, minY=Infinity, maxY=-Infinity;
+    for(let i=0;i<468;i++){
+      const x=lx(i), y=ly(i);
+      if(x<minX)minX=x; if(x>maxX)maxX=x;
+      if(y<minY)minY=y; if(y>maxY)maxY=y;
+    }
+    const fcx=(minX+maxX)/2, fcy=(minY+maxY)/2;
+    const rx=(maxX-minX)/2+12, ry=(maxY-minY)/2+10; // 12/10px padding
+    ctx.strokeStyle='rgba(232,121,249,0.6)'; ctx.lineWidth=2; ctx.shadowBlur=12; ctx.shadowColor='#e879f9';
     ctx.beginPath();
-    pts.forEach((p,n)=>{
-      const ex=cx+(p.x-cx)*EXP, ey=cy+(p.y-cy)*EXP;
-      n===0?ctx.moveTo(ex,ey):ctx.lineTo(ex,ey);
-    });
-    ctx.closePath(); ctx.stroke();
+    ctx.ellipse(fcx, fcy, rx, ry, 0, 0, Math.PI*2);
+    ctx.stroke();
   }
 
   // ③ Eyebrows
