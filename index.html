@@ -448,7 +448,7 @@
   <div id="startOverlay">
     <h1>FINGER TAP FX</h1>
     <p>Live finger tracking + UPDRS assessment.<br>Upload video for offline analysis.</p>
-    <button class="btn-primary" id="startBtn">Enter Experience</button>
+    <button class="btn-primary" id="startBtn" onclick="enterExperience()">Enter Experience</button>
   </div>
 
   <video id="video" autoplay playsinline></video>
@@ -661,16 +661,23 @@ supa.auth.onAuthStateChange((_e, session) => {
   updateAuthUI();
 });
 
-// On load: silently cache session — never change UI here
-// The startOverlay (splash screen) always waits for user click
-let cachedSession = null;
+// On load: silently cache session state
 supa.auth.getSession().then(({ data }) => {
-  cachedSession = data.session;
   if (data.session) {
     currentUser = data.session.user;
     updateAuthUI();
   }
-}).catch(() => { cachedSession = null; });
+}).catch(() => {});
+
+function enterExperience() {
+  document.getElementById('startOverlay').classList.add('hidden');
+  if (currentUser) {
+    showAssessSelector();
+  } else {
+    switchAuthTab('login');
+    document.getElementById('authOverlay').classList.remove('hidden');
+  }
+}
 
 const ADMIN_EMAIL = 'kwon3856@gmail.com';
 
@@ -2691,15 +2698,7 @@ try {
 // ═══════════════════════════════════════════
 const $=s=>document.getElementById(s);
 
-$('startBtn').addEventListener('click', ()=>{
-  $('startOverlay').classList.add('hidden');
-  if (cachedSession) {
-    showAssessSelector();
-  } else {
-    switchAuthTab('login');
-    $('authOverlay').classList.remove('hidden');
-  }
-});
+$('startBtn').addEventListener('click', enterExperience);
 
 // Landing CTA buttons
 $('landSignupBtn').addEventListener('click', () => openAuth('signup'));
