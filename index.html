@@ -2831,6 +2831,8 @@ let faceEdgeCache = null;
 
 // Face Mesh connection edge pairs (MediaPipe Face Mesh standard)
 const FM_OVAL =[[10,338],[338,297],[297,332],[332,284],[284,251],[251,389],[389,356],[356,454],[454,323],[323,361],[361,288],[288,397],[397,365],[365,379],[379,378],[378,400],[400,377],[377,152],[152,148],[148,176],[176,149],[149,150],[150,136],[136,172],[172,58],[58,132],[132,93],[93,234],[234,127],[127,162],[162,21],[21,54],[54,103],[103,67],[67,109],[109,10]];
+// Ordered list of oval landmark indices (for expansion drawing)
+const FM_OVAL_PTS=[10,338,297,332,284,251,389,356,454,323,361,288,397,365,379,378,400,377,152,148,176,149,150,136,172,58,132,93,234,127,162,21,54,103,67,109];
 const FM_L_EYE=[[33,7],[7,163],[163,144],[144,145],[145,153],[153,154],[154,155],[155,133],[133,173],[173,157],[157,158],[158,159],[159,160],[160,161],[161,246],[246,33]];
 const FM_R_EYE=[[263,249],[249,390],[390,373],[373,374],[374,380],[380,381],[381,382],[382,362],[362,398],[398,384],[384,385],[385,386],[386,387],[387,388],[388,466],[466,263]];
 const FM_L_BROW=[[46,53],[53,52],[52,65],[65,55],[55,70],[70,63],[63,105],[105,66],[66,107]];
@@ -2868,25 +2870,34 @@ function drawFaceMesh(lm) {
       }
     }
     // Draw mesh lines
-    ctx.strokeStyle='rgba(232,121,249,0.11)'; ctx.lineWidth=0.7; ctx.shadowBlur=0;
+    ctx.strokeStyle='rgba(232,121,249,0.18)'; ctx.lineWidth=0.8; ctx.shadowBlur=0;
     ctx.beginPath();
     faceEdgeCache.forEach(([a,b])=>{ ctx.moveTo(lx(a),ly(a)); ctx.lineTo(lx(b),ly(b)); });
     ctx.stroke();
-    // Landmark dots on top
-    ctx.fillStyle='rgba(232,121,249,0.32)';
+    // Landmark dots on top — brighter & larger
+    ctx.fillStyle='rgba(232,121,249,0.72)';
     ctx.beginPath();
     for(let i=0;i<468;i++){
       const x=lx(i),y=ly(i);
-      ctx.moveTo(x+1.4,y); ctx.arc(x,y,1.4,0,Math.PI*2);
+      ctx.moveTo(x+2.2,y); ctx.arc(x,y,2.2,0,Math.PI*2);
     }
     ctx.fill();
   }
 
-  // ② Face oval
-  ctx.strokeStyle='rgba(232,121,249,0.28)'; ctx.lineWidth=1.3; ctx.shadowBlur=5; ctx.shadowColor='#e879f9';
-  ctx.beginPath();
-  FM_OVAL.forEach(([a,b])=>{ ctx.moveTo(lx(a),ly(a)); ctx.lineTo(lx(b),ly(b)); });
-  ctx.stroke();
+  // ② Face oval — expanded 15% outward from centroid for wider silhouette
+  {
+    const pts=FM_OVAL_PTS.map(i=>({x:lx(i),y:ly(i)}));
+    const cx=pts.reduce((s,p)=>s+p.x,0)/pts.length;
+    const cy=pts.reduce((s,p)=>s+p.y,0)/pts.length;
+    const EXP=1.15;
+    ctx.strokeStyle='rgba(232,121,249,0.55)'; ctx.lineWidth=2; ctx.shadowBlur=10; ctx.shadowColor='#e879f9';
+    ctx.beginPath();
+    pts.forEach((p,n)=>{
+      const ex=cx+(p.x-cx)*EXP, ey=cy+(p.y-cy)*EXP;
+      n===0?ctx.moveTo(ex,ey):ctx.lineTo(ex,ey);
+    });
+    ctx.closePath(); ctx.stroke();
+  }
 
   // ③ Eyebrows
   ctx.strokeStyle='rgba(232,121,249,0.65)'; ctx.lineWidth=2.2; ctx.shadowBlur=9; ctx.shadowColor='#e879f9';
