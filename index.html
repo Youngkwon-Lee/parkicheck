@@ -544,6 +544,7 @@
         <div class="assess-desc">눈 깜빡임·표정 변화량·과민증</div>
         <div class="assess-dot"></div>
       </div>
+      <button class="btn-primary" style="grid-column:1/-1;margin-top:4px;background:linear-gradient(135deg,#7c3aed,#db2777);font-size:0.82rem" onclick="startFullAssessment()">▶ FULL ASSESSMENT — 10 tests (~10 min)</button>
     </div>
     <button class="assess-back" onclick="setMode('free')">← BACK TO FREE PLAY</button>
   </div>
@@ -640,6 +641,19 @@
       </div>
       <button class="btn-primary" id="testRetryBtn">RETRY</button>
       <button class="btn-primary btn-ghost" id="testDoneBtn">DONE</button>
+      <button id="seqNextBtn" class="btn-primary" style="display:none;background:linear-gradient(135deg,#7c3aed,#00ffcc);margin-top:8px;width:100%" onclick="seqManualNext()">NEXT TEST → (<span id="seqCountdownEl">10</span>s)</button>
+    </div>
+  </div>
+
+  <!-- Sequential Summary -->
+  <div id="seqSummaryOverlay" class="ov-center hidden">
+    <div class="ov-card" style="max-width:380px;text-align:center">
+      <div class="ov-h2">UPDRS PART III</div>
+      <div class="ov-sub">MOTOR ASSESSMENT COMPLETE</div>
+      <div id="seqTotalEl" style="font-size:3.8rem;font-weight:900;color:#00ffcc;text-shadow:0 0 40px #00ffcc;margin:14px 0">—</div>
+      <div style="font-size:0.68rem;color:rgba(255,255,255,0.4);margin-bottom:14px">총점 / 40점</div>
+      <div id="seqBreakdown" style="width:100%;font-size:0.72rem;text-align:left;line-height:2"></div>
+      <button class="btn-primary" style="margin-top:16px;width:100%" onclick="seqFinish()">FINISH</button>
     </div>
   </div>
 
@@ -1205,6 +1219,12 @@ let faceLastEAR = {left:1, right:1};
 let faceBlinkInProgress = false;
 let faceLastBlinkMs = 0;
 
+// Sequential mode
+const FULL_SEQUENCE = ['face','finger','hand','pronation','tremor','toe','leg','actiontremor','posture','gait'];
+let seqMode = false, seqIdx = 0;
+const seqScores = {};
+let seqNextTimer = null;
+
 // Video analysis
 let pendingResolve = null;   // resolves after each hands.onResults in video mode
 let videoAnalysisDuration = 10; // seconds (updated from actual video)
@@ -1625,6 +1645,7 @@ function showResults(durationSec = 10, title = 'UPDRS 3.4 — FINGER TAPPING') {
   saveBtn.style.display = ''; saveBtn.disabled = false;
   saveMsg.textContent = ''; saveMsg.style.color = '';
   if (!currentUser) saveMsg.textContent = '로그인하면 기록이 저장됩니다';
+  onSeqTestComplete(score);
 }
 
 // ═══════════════════════════════════════════
@@ -1697,6 +1718,7 @@ function showTremorResults() {
   saveBtn.style.display=''; saveBtn.disabled=false;
   saveMsg.textContent=''; saveMsg.style.color='';
   if(!currentUser) saveMsg.textContent='로그인하면 기록이 저장됩니다';
+  onSeqTestComplete(score);
 }
 
 // ═══════════════════════════════════════════
@@ -1916,6 +1938,8 @@ function startTest() {
     faceBlinkBuffer.length=0; faceExprBuffer.length=0;
     faceBlinkInProgress=false; faceLastBlinkMs=0; faceLastEAR={left:1,right:1};
     faceEdgeCache=null;
+    faceSmileBuffer.length=0;
+    Object.assign(faceNeutral,{leftCornerY:0,rightCornerY:0,leftBrowY:0,rightBrowY:0,n:0});
   }
   if(testType==='gait'){
     gaitSteps.length=0; gaitArmSwings.length=0;
@@ -2568,6 +2592,7 @@ function showPostureResults() {
   saveBtn.style.display=''; saveBtn.disabled=false;
   saveMsg.textContent=''; saveMsg.style.color='';
   if(!currentUser) saveMsg.textContent='로그인하면 기록이 저장됩니다';
+  onSeqTestComplete(score);
 }
 
 // ═══════════════════════════════════════════
@@ -2682,6 +2707,7 @@ function showGaitResults() {
   saveBtn.style.display=''; saveBtn.disabled=false;
   saveMsg.textContent=''; saveMsg.style.color='';
   if(!currentUser) saveMsg.textContent='로그인하면 기록이 저장됩니다';
+  onSeqTestComplete(score);
 }
 
 // ═══════════════════════════════════════════
@@ -2743,6 +2769,23 @@ function detectFace(lm) {
   const rightEyeY =(lm[386].y+lm[374].y)/2;
   const browLift  =Math.max(0,((leftEyeY-leftBrowY)+(rightEyeY-rightBrowY))/2/faceH);
   faceExprBuffer.push({t:now, mouthOpen, browLift, ear:avgEAR});
+
+  // Smile phase (t=5-11s): measure mouth-corner asymmetry vs neutral baseline
+  const faceElapsed = testState==='running' ? Date.now()-testData.startTime : 0;
+  if(faceElapsed < 4500) {
+    // Build neutral baseline from first 4.5s
+    faceNeutral.leftCornerY  = (faceNeutral.leftCornerY*faceNeutral.n  + lm[61].y)  / (faceNeutral.n+1);
+    faceNeutral.rightCornerY = (faceNeutral.rightCornerY*faceNeutral.n + lm[291].y) / (faceNeutral.n+1);
+    faceNeutral.leftBrowY    = (faceNeutral.leftBrowY*faceNeutral.n    + (lm[66].y+lm[105].y)/2) / (faceNeutral.n+1);
+    faceNeutral.rightBrowY   = (faceNeutral.rightBrowY*faceNeutral.n   + (lm[296].y+lm[334].y)/2) / (faceNeutral.n+1);
+    faceNeutral.n++;
+  } else if(faceElapsed >= 5000 && faceElapsed < 11000 && faceNeutral.n > 30) {
+    // Smile window: measure corner lift
+    const leftRise  = faceNeutral.leftCornerY  - lm[61].y;   // positive = corner lifted
+    const rightRise = faceNeutral.rightCornerY - lm[291].y;
+    const mouthW    = faceD(lm, 61, 291);
+    faceSmileBuffer.push({leftRise, rightRise, mouthW});
+  }
 }
 
 function scoreFace() {
@@ -2760,13 +2803,25 @@ function scoreFace() {
     const exprVar=Math.sqrt(mVar/n)*0.6+Math.sqrt(bVar/n)*0.4;
     exprScore=exprVar>=0.012?0:exprVar>=0.008?1:exprVar>=0.005?2:exprVar>=0.002?3:4;
     const score=Math.min(4,Math.round(blinkScore*0.6+exprScore*0.4));
-    return {score,blinkPM,blinkCount:faceBlinkBuffer.length,exprVar,exprScore,blinkScore,n};
+    // Smile asymmetry from smile buffer
+    let smileAsymmetry=0, smileAmplitude=0;
+    if(faceSmileBuffer.length>5){
+      const validSmile=faceSmileBuffer.filter(f=>f.leftRise>0||f.rightRise>0);
+      if(validSmile.length>3){
+        smileAmplitude=validSmile.reduce((s,f)=>(s+(f.leftRise+f.rightRise)/2),0)/validSmile.length;
+        const avgL=validSmile.reduce((s,f)=>s+f.leftRise,0)/validSmile.length;
+        const avgR=validSmile.reduce((s,f)=>s+f.rightRise,0)/validSmile.length;
+        smileAsymmetry=Math.abs(avgL-avgR)/Math.max(avgL+avgR,0.001);
+        exprScore=smileAmplitude>0.02?0:smileAmplitude>0.012?1:smileAmplitude>0.006?2:smileAmplitude>0.002?3:4;
+      }
+    }
+    return {score,blinkPM,blinkCount:faceBlinkBuffer.length,exprVar,exprScore,blinkScore,n,smileAsymmetry,smileAmplitude};
   }
-  return {score:blinkScore,blinkPM,blinkCount:faceBlinkBuffer.length,exprVar:0,exprScore,blinkScore,n};
+  return {score:blinkScore,blinkPM,blinkCount:faceBlinkBuffer.length,exprVar:0,exprScore,blinkScore,n,smileAsymmetry:0,smileAmplitude:0};
 }
 
 function showFaceResults() {
-  const {score,blinkPM,blinkCount,exprVar,exprScore,blinkScore,n}=scoreFace();
+  const {score,blinkPM,blinkCount,exprVar,exprScore,blinkScore,n,smileAsymmetry,smileAmplitude}=scoreFace();
   const UPDRS_COLORS=['#00ffcc','#88ff44','#ffff00','#ff8800','#ff2244'];
   const UPDRS_LABELS=['정상','경미한 감소','중등도 감소','심각한 감소','표정 고정'];
   const UPDRS_DESC  =['정상 범위의 깜빡임과 표정 변화','약간의 표정 감소','명확한 표정 감소','심한 무표정, 입 열림 간헐적','마스크 얼굴, 심한 무표정'];
@@ -2783,8 +2838,8 @@ function showFaceResults() {
   el('resTaps').textContent=blinkCount;
   el('lblTaps').textContent=`BLINKS / ${durSec}s`;
   el('resFreq').textContent=blinkPM.toFixed(1);
-  el('resArrests').textContent=`${blinkScore}/4`;
-  el('resITI').textContent=`${exprScore}/4`;
+  el('resArrests').textContent=`${(smileAsymmetry*100).toFixed(0)}%`;
+  el('resITI').textContent=`${(smileAmplitude*1000).toFixed(1)}`;
   el('resMaxAmp').textContent=(exprVar*1000).toFixed(1);
   el('resFatig').textContent=`${n}`;
   // Blink timeline bar chart
@@ -2801,7 +2856,7 @@ function showFaceResults() {
       chartEl.appendChild(b);
     });
   }
-  [[  'freq',blinkScore],['arrest',exprScore],['rhythm',0],['amp',score],['fatig',0]].forEach(([id,fs])=>{
+  [[  'freq',blinkScore],['arrest',Math.round(smileAsymmetry*4)],['rhythm',Math.round((1-smileAmplitude/0.02)*4)],['amp',score],['fatig',0]].forEach(([id,fs])=>{
     const c=FC[Math.min(fs,4)];
     el(`fb-${id}`).style.width=`${(fs/4)*100}%`; el(`fb-${id}`).style.background=c; el(`fb-${id}`).style.boxShadow=`0 0 6px ${c}`;
     el(`fs-${id}`).textContent=`${fs}/4`; el(`fs-${id}`).style.color=c;
@@ -2809,7 +2864,7 @@ function showFaceResults() {
   const confidence=n>=300?'HIGH':n>=100?'MEDIUM':'LOW';
   const confC={HIGH:'#00ffcc',MEDIUM:'#ffff00',LOW:'#ff8800'};
   const ct=el('confidenceTag'); ct.textContent=`${confidence} CONFIDENCE  (n=${n})`; ct.style.color=confC[confidence]; ct.style.borderColor=confC[confidence];
-  el('fatigVal').textContent=`깜빡임 ${blinkPM.toFixed(1)}/분  표정변화 ${(exprVar*1000).toFixed(1)}`;
+  el('fatigVal').textContent=`깜빡임 ${blinkPM.toFixed(1)}/분  스마일비대칭 ${(smileAsymmetry*100).toFixed(0)}%  진폭 ${(smileAmplitude*1000).toFixed(1)}`;
   el('fatigVal').style.color=color;
   el('resultsOverlay').classList.add('visible');
   lastResultPayload={
@@ -2824,7 +2879,12 @@ function showFaceResults() {
   saveBtn.style.display=''; saveBtn.disabled=false;
   saveMsg.textContent=''; saveMsg.style.color='';
   if(!currentUser) saveMsg.textContent='로그인하면 기록이 저장됩니다';
+  onSeqTestComplete(score);
 }
+
+// Face smile/asymmetry state
+const faceNeutral = {leftCornerY:0, rightCornerY:0, leftBrowY:0, rightBrowY:0, n:0};
+const faceSmileBuffer = []; // {leftRise, rightRise, mouthW}
 
 // Face edge cache — computed once from first frame landmarks (near-neighbor distance threshold)
 let faceEdgeCache = null;
@@ -2967,6 +3027,20 @@ function drawFaceMesh(lm) {
     const si=bpm>=12?0:bpm>=8?1:bpm>=5?2:bpm>=2?3:4;
     ctx.font='bold 11px monospace'; ctx.fillStyle=bpmC; ctx.shadowBlur=8; ctx.shadowColor=bpmC;
     ctx.fillText(sev[si], W-18, 84);
+    const fe=Date.now()-testData.startTime;
+    if(fe<4500){
+      ctx.font='bold 18px monospace'; ctx.fillStyle='rgba(255,255,255,0.6)'; ctx.textAlign='center'; ctx.shadowBlur=0;
+      ctx.fillText('NEUTRAL — look forward', W/2, H*0.12);
+    } else if(fe>=4500&&fe<5000){
+      ctx.font='bold 22px monospace'; ctx.fillStyle='#ffff00'; ctx.shadowBlur=12; ctx.shadowColor='#ffff00'; ctx.textAlign='center';
+      ctx.fillText('GET READY TO SMILE...', W/2, H*0.12);
+    } else if(fe>=5000&&fe<11000){
+      ctx.font='bold 28px monospace'; ctx.fillStyle='#00ffcc'; ctx.shadowBlur=16; ctx.shadowColor='#00ffcc'; ctx.textAlign='center';
+      ctx.fillText('SMILE :)', W/2, H*0.12);
+    } else {
+      ctx.font='bold 18px monospace'; ctx.fillStyle='rgba(255,255,255,0.6)'; ctx.shadowBlur=0; ctx.textAlign='center';
+      ctx.fillText('NEUTRAL — relax', W/2, H*0.12);
+    }
   }
   ctx.restore();
 }
@@ -3080,6 +3154,69 @@ try {
 } catch(e) {
   console.error('MediaPipe init failed:', e);
   camera = { start: ()=>Promise.resolve(), stop:()=>{} };
+}
+
+// ═══════════════════════════════════════════
+// SEQUENTIAL ASSESSMENT MODE
+// ═══════════════════════════════════════════
+function startFullAssessment() {
+  seqMode=true; seqIdx=0;
+  Object.keys(seqScores).forEach(k=>delete seqScores[k]);
+  seqAdvance();
+}
+function seqAdvance() {
+  document.getElementById('resultsOverlay').classList.remove('visible');
+  document.getElementById('seqNextBtn').style.display='none';
+  clearInterval(seqNextTimer);
+  if(seqIdx>=FULL_SEQUENCE.length){ showSeqSummary(); return; }
+  selectAssessment(FULL_SEQUENCE[seqIdx]);
+  // Auto-click START TEST after 4s (user reads instructions)
+  setTimeout(()=>{ const b=$('testStartBtn'); if(b&&testState==='idle')b.click(); }, 4000);
+}
+function seqManualNext() {
+  clearInterval(seqNextTimer);
+  seqIdx++;
+  seqAdvance();
+}
+function onSeqTestComplete(score) {
+  if(!seqMode) return;
+  seqScores[FULL_SEQUENCE[seqIdx]]=score;
+  const btn=document.getElementById('seqNextBtn');
+  btn.style.display='';
+  let t=10;
+  document.getElementById('seqCountdownEl').textContent=t;
+  seqNextTimer=setInterval(()=>{
+    t--;
+    const el=document.getElementById('seqCountdownEl');
+    if(el) el.textContent=t;
+    if(t<=0){ clearInterval(seqNextTimer); seqIdx++; seqAdvance(); }
+  },1000);
+}
+function showSeqSummary() {
+  seqMode=false;
+  const total=Object.values(seqScores).reduce((a,b)=>a+b,0);
+  const max=FULL_SEQUENCE.length*4;
+  const pct=Math.round((total/max)*100);
+  const sev=total<=4?'정상':total<=10?'경미':total<=20?'중등도':total<=30?'심각':'최중증';
+  const col=total<=4?'#00ffcc':total<=10?'#88ff44':total<=20?'#ffff00':total<=30?'#ff8800':'#ff2244';
+  const el=s=>document.getElementById(s);
+  el('seqTotalEl').textContent=total;
+  el('seqTotalEl').style.color=col;
+  el('seqTotalEl').style.textShadow=`0 0 40px ${col}`;
+  const LABELS={face:'3.2 Face',finger:'3.4 Finger',hand:'3.5 Hand',pronation:'3.6 Pronation',tremor:'3.14 Tremor',toe:'3.7 Toe',leg:'3.8 Leg',actiontremor:'3.15 Action',posture:'3.12 Posture',gait:'3.9 Gait'};
+  const FC=['#00ffcc','#88ff44','#ffff00','#ff8800','#ff2244'];
+  el('seqBreakdown').innerHTML=FULL_SEQUENCE.map(t=>{
+    const s=seqScores[t]??'—';
+    const c=typeof s==='number'?FC[s]:'#888';
+    return `<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid rgba(255,255,255,0.05)">
+      <span style="color:rgba(255,255,255,0.6)">${LABELS[t]}<\/span>
+      <span style="color:${c};font-weight:700">${s}\/4<\/span><\/div>`;
+  }).join('');
+  el('seqSummaryOverlay').classList.remove('hidden');
+}
+function seqFinish() {
+  document.getElementById('seqSummaryOverlay').classList.add('hidden');
+  setMode('free');
 }
 
 // ═══════════════════════════════════════════
