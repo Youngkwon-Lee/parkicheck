@@ -445,10 +445,10 @@
   </div>
 
   <!-- Init -->
-  <div id="startOverlay" onclick="console.log('[ParkiCheck] startOverlay clicked, target=', event.target.id)">
+  <div id="startOverlay">
     <h1>FINGER TAP FX</h1>
     <p>Live finger tracking + UPDRS assessment.<br>Upload video for offline analysis.</p>
-    <button class="btn-primary" id="startBtn" onclick="console.log('[ParkiCheck] startBtn onclick'); enterExperience()">Enter Experience</button>
+    <button class="btn-primary" id="startBtn" onclick="enterExperience()">Enter Experience</button>
   </div>
 
   <video id="video" autoplay playsinline></video>
@@ -670,20 +670,12 @@ supa.auth.getSession().then(({ data }) => {
 }).catch(() => {});
 
 function enterExperience() {
-  console.log('[ParkiCheck] enterExperience called, currentUser=', currentUser);
   const overlay = document.getElementById('startOverlay');
   const auth    = document.getElementById('authOverlay');
-  console.log('[ParkiCheck] startOverlay=', overlay, 'authOverlay=', auth);
-  if (!overlay || !auth) { alert('DOM ERROR: overlay elements missing'); return; }
+  if (!overlay || !auth) return;
   overlay.classList.add('hidden');
-  if (currentUser) {
-    console.log('[ParkiCheck] → showAssessSelector');
-    showAssessSelector();
-  } else {
-    console.log('[ParkiCheck] → authOverlay');
-    switchAuthTab('login');
-    auth.classList.remove('hidden');
-  }
+  if (currentUser) { showAssessSelector(); }
+  else { switchAuthTab('login'); auth.classList.remove('hidden'); }
 }
 
 const ADMIN_EMAIL = 'kwon3856@gmail.com';
@@ -2361,29 +2353,103 @@ function loadPoseModel() {
 
 const POSE_CONNECTIONS=[[11,12],[11,13],[13,15],[12,14],[14,16],[11,23],[12,24],[23,24],[23,25],[25,27],[24,26],[26,28],[27,31],[28,32]];
 
+// wrist trail for gait arm swing
+const wristTrails = {15:[], 16:[]};
+
 function drawPoseSkeleton(landmarks) {
   if(!landmarks) return;
   const W=canvas.width, H=canvas.height;
-  ctx.save(); ctx.strokeStyle='rgba(255,255,255,0.15)'; ctx.lineWidth=1.5;
+
+  // ── Skeleton lines ──────────────────────────────────────
+  // Posture: color skeleton by lean severity; Gait: accent active limbs
+  const isPosture = testType==='posture';
+  const isGait    = testType==='gait';
+  const leanSeverity = isPosture && postureBuffer.length>0
+    ? Math.min(1, (postureBuffer[postureBuffer.length-1]?.lateralLean||0) / 0.25)
+    : 0;
+  const skelColor = isPosture
+    ? `rgba(${Math.round(30+225*leanSeverity)},${Math.round(255*(1-leanSeverity*0.8))},${Math.round(200*(1-leanSeverity))},0.55)`
+    : 'rgba(255,255,255,0.18)';
+
+  ctx.save();
+  ctx.strokeStyle = skelColor;
+  ctx.lineWidth = isPosture ? 2.5 : 1.8;
+  if(isPosture) { ctx.shadowBlur=8; ctx.shadowColor=skelColor; }
   POSE_CONNECTIONS.forEach(([a,b])=>{
     const la=landmarks[a], lb=landmarks[b];
-    if(!la||!lb||(la.visibility!=null&&la.visibility<0.3)||(lb.visibility!=null&&lb.visibility<0.3)) return;
+    if(!la||!lb||(la.visibility??1)<0.3||(lb.visibility??1)<0.3) return;
     ctx.beginPath(); ctx.moveTo((1-la.x)*W,la.y*H); ctx.lineTo((1-lb.x)*W,lb.y*H); ctx.stroke();
   });
-  // Highlight key landmarks per test type
+  ctx.restore();
+
+  // ── Highlight key landmarks per test type ───────────────
   const hlMap = {
-    toe:     [[25,'#ffee00'],[26,'#ffee00'],[27,'#00ff88'],[28,'#00ff88']],
-    leg:     [[25,'#ffee00'],[26,'#ffee00'],[27,'#00ff88'],[28,'#00ff88']],
-    posture: [[0,'#ffffff'],[11,'#4fc3f7'],[12,'#4fc3f7'],[23,'#ffee00'],[24,'#ffee00']],
-    gait:    [[27,'#fb923c'],[28,'#fb923c'],[15,'#00ffcc'],[16,'#00ffcc']],
+    toe:     [[25,'#ffee00',8],[26,'#ffee00',8],[27,'#00ff88',8],[28,'#00ff88',8]],
+    leg:     [[25,'#ffee00',8],[26,'#ffee00',8],[27,'#00ff88',8],[28,'#00ff88',8]],
+    posture: [[0,'#ffffff',7],[11,'#4fc3f7',9],[12,'#4fc3f7',9],[23,'#ffee00',9],[24,'#ffee00',9]],
+    gait:    [[27,'#fb923c',9],[28,'#fb923c',9],[15,'#00ffcc',8],[16,'#00ffcc',8]],
   };
-  (hlMap[testType]||hlMap.toe).forEach(([i,c])=>{
+  ctx.save();
+  (hlMap[testType]||hlMap.toe).forEach(([i,c,r])=>{
     const lm=landmarks[i];
-    if(!lm||(lm.visibility!=null&&lm.visibility<0.3)) return;
-    ctx.fillStyle=c; ctx.shadowBlur=12; ctx.shadowColor=c;
-    ctx.beginPath(); ctx.arc((1-lm.x)*W,lm.y*H,6,0,Math.PI*2); ctx.fill();
+    if(!lm||(lm.visibility??1)<0.3) return;
+    const x=(1-lm.x)*W, y=lm.y*H;
+    ctx.shadowBlur=18; ctx.shadowColor=c; ctx.fillStyle=c;
+    ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+    // Extra outer ring for posture joints when leaning
+    if(isPosture && leanSeverity>0.3 && (i===11||i===12||i===23||i===24)){
+      ctx.globalAlpha=0.35; ctx.strokeStyle=c; ctx.lineWidth=1.5;
+      ctx.shadowBlur=0;
+      ctx.beginPath(); ctx.arc(x,y,r+8+leanSeverity*10,0,Math.PI*2); ctx.stroke();
+      ctx.globalAlpha=1;
+    }
   });
   ctx.restore();
+
+  // ── Posture overlay: vertical reference + lean bar ───────
+  if(isPosture && testState==='running') {
+    const ls=landmarks[11], rs=landmarks[12], lh=landmarks[23], rh=landmarks[24];
+    if(ls&&rs&&lh&&rh&&(ls.visibility??1)>0.3) {
+      const smx=(1-(ls.x+rs.x)/2)*W, smy=(ls.y+rs.y)/2*H;
+      const hmx=(1-(lh.x+rh.x)/2)*W, hmy=(lh.y+rh.y)/2*H;
+      const leanC = leanSeverity<0.3?'#00ffcc':leanSeverity<0.6?'#ffff00':'#ff4444';
+      ctx.save();
+      // Vertical reference line
+      ctx.setLineDash([6,8]); ctx.strokeStyle='rgba(255,255,255,0.2)'; ctx.lineWidth=1;
+      ctx.beginPath(); ctx.moveTo(hmx,hmy-200); ctx.lineTo(hmx,hmy+60); ctx.stroke();
+      ctx.setLineDash([]);
+      // Actual spine line (shoulder mid → hip mid)
+      ctx.strokeStyle=leanC; ctx.lineWidth=3;
+      ctx.shadowBlur=14; ctx.shadowColor=leanC;
+      ctx.beginPath(); ctx.moveTo(smx,smy); ctx.lineTo(hmx,hmy); ctx.stroke();
+      // Lean severity label
+      const pct=Math.round(leanSeverity*100);
+      ctx.font='bold 13px monospace'; ctx.fillStyle=leanC; ctx.shadowBlur=10; ctx.shadowColor=leanC;
+      ctx.fillText(`LEAN ${pct}%`, hmx+14, hmy-10);
+      ctx.restore();
+    }
+  }
+
+  // ── Gait: wrist trails for arm swing visualization ───────
+  if(isGait) {
+    [15,16].forEach(idx=>{
+      const lm=landmarks[idx];
+      if(!lm||(lm.visibility??1)<0.3) return;
+      const x=(1-lm.x)*W, y=lm.y*H;
+      const trail=wristTrails[idx];
+      trail.push({x,y,t:Date.now()});
+      if(trail.length>18) trail.shift();
+      const c=idx===15?'#00ffcc':'#ff6b9d';
+      ctx.save();
+      trail.forEach((p,i)=>{
+        const a=(i/trail.length)*0.55;
+        const r=2+i*0.3;
+        ctx.globalAlpha=a; ctx.fillStyle=c; ctx.shadowBlur=8; ctx.shadowColor=c;
+        ctx.beginPath(); ctx.arc(p.x,p.y,r,0,Math.PI*2); ctx.fill();
+      });
+      ctx.restore();
+    });
+  }
 }
 
 // ═══════════════════════════════════════════
@@ -2705,7 +2771,6 @@ try {
 // ═══════════════════════════════════════════
 const $=s=>document.getElementById(s);
 
-console.log('[ParkiCheck] Script init complete. startBtn=', document.getElementById('startBtn'), 'enterExperience=', typeof enterExperience);
 $('startBtn').addEventListener('click', enterExperience);
 
 // Landing CTA buttons
