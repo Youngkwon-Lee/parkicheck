@@ -445,10 +445,10 @@
   </div>
 
   <!-- Init -->
-  <div id="startOverlay">
+  <div id="startOverlay" onclick="console.log('[ParkiCheck] startOverlay clicked, target=', event.target.id)">
     <h1>FINGER TAP FX</h1>
     <p>Live finger tracking + UPDRS assessment.<br>Upload video for offline analysis.</p>
-    <button class="btn-primary" id="startBtn" onclick="enterExperience()">Enter Experience</button>
+    <button class="btn-primary" id="startBtn" onclick="console.log('[ParkiCheck] startBtn onclick'); enterExperience()">Enter Experience</button>
   </div>
 
   <video id="video" autoplay playsinline></video>
@@ -670,12 +670,19 @@ supa.auth.getSession().then(({ data }) => {
 }).catch(() => {});
 
 function enterExperience() {
-  document.getElementById('startOverlay').classList.add('hidden');
+  console.log('[ParkiCheck] enterExperience called, currentUser=', currentUser);
+  const overlay = document.getElementById('startOverlay');
+  const auth    = document.getElementById('authOverlay');
+  console.log('[ParkiCheck] startOverlay=', overlay, 'authOverlay=', auth);
+  if (!overlay || !auth) { alert('DOM ERROR: overlay elements missing'); return; }
+  overlay.classList.add('hidden');
   if (currentUser) {
+    console.log('[ParkiCheck] → showAssessSelector');
     showAssessSelector();
   } else {
+    console.log('[ParkiCheck] → authOverlay');
     switchAuthTab('login');
-    document.getElementById('authOverlay').classList.remove('hidden');
+    auth.classList.remove('hidden');
   }
 }
 
@@ -2698,6 +2705,7 @@ try {
 // ═══════════════════════════════════════════
 const $=s=>document.getElementById(s);
 
+console.log('[ParkiCheck] Script init complete. startBtn=', document.getElementById('startBtn'), 'enterExperience=', typeof enterExperience);
 $('startBtn').addEventListener('click', enterExperience);
 
 // Landing CTA buttons
