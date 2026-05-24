@@ -425,6 +425,7 @@
           <button class="hist-filter-btn" style="--fc:#ff6b9d" onclick="setHistFilter('actiontremor',this)">3.15</button>
           <button class="hist-filter-btn" style="--fc:#4fc3f7" onclick="setHistFilter('posture',this)">3.12</button>
           <button class="hist-filter-btn" style="--fc:#fb923c" onclick="setHistFilter('gait',this)">3.9</button>
+          <button class="hist-filter-btn" style="--fc:#e879f9" onclick="setHistFilter('face',this)">3.2</button>
         </div>
       </div>
 
@@ -535,6 +536,12 @@
         <div class="assess-num">UPDRS 3.9</div>
         <div class="assess-name">GAIT</div>
         <div class="assess-desc">걸음 속도·좌우비대칭·팔흔들기</div>
+        <div class="assess-dot"></div>
+      </div>
+      <div class="assess-card" style="--ac:#e879f9" onclick="selectAssessment('face')">
+        <div class="assess-num">UPDRS 3.2</div>
+        <div class="assess-name">FACIAL EXPR.</div>
+        <div class="assess-desc">눈 깜빡임·표정 변화량·과민증</div>
         <div class="assess-dot"></div>
       </div>
     </div>
@@ -854,7 +861,7 @@ function saveMedLog() {
 }
 
 // ── Chart rendering ───────────────────────────
-const TYPE_COLORS = {finger:'#00ffcc',hand:'#ff00ff',pronation:'#ff8800',tremor:'#a78bfa',toe:'#00ff88',leg:'#ffee00',actiontremor:'#ff6b9d',posture:'#4fc3f7',gait:'#fb923c'};
+const TYPE_COLORS = {finger:'#00ffcc',hand:'#ff00ff',pronation:'#ff8800',tremor:'#a78bfa',toe:'#00ff88',leg:'#ffee00',actiontremor:'#ff6b9d',posture:'#4fc3f7',gait:'#fb923c',face:'#e879f9'};
 const SCORE_COLORS = ['#00ffcc','#88ff44','#ffff00','#ff8800','#ff2244'];
 
 function refreshHistChart() {
@@ -944,7 +951,7 @@ function drawHistChart(canvas, results, medLogs, filter) {
 function renderHistList() {
   const listEl = document.getElementById('historyList');
   if(!histResults.length&&!histMedLogs.length){listEl.innerHTML='<div class="hist-empty">아직 기록이 없습니다.</div>';return;}
-  const TYPE_LABEL={finger:'3.4 FINGER',hand:'3.5 HAND',pronation:'3.6 PRONATION',tremor:'3.14 TREMOR',toe:'3.7 TOE',leg:'3.8 LEG',actiontremor:'3.15 A.TREMOR',posture:'3.12 POSTURE',gait:'3.9 GAIT'};
+  const TYPE_LABEL={finger:'3.4 FINGER',hand:'3.5 HAND',pronation:'3.6 PRONATION',tremor:'3.14 TREMOR',toe:'3.7 TOE',leg:'3.8 LEG',actiontremor:'3.15 A.TREMOR',posture:'3.12 POSTURE',gait:'3.9 GAIT',face:'3.2 FACE'};
   const SEVERITY=['정상','경미','중등도','심각','최중증'];
 
   const items=[
@@ -975,7 +982,7 @@ function generateReport() {
   const chartImg = canvas?.toDataURL('image/png') || '';
   const dateStr = new Date().toLocaleDateString('ko-KR');
   const email = currentUser?.email || 'Guest';
-  const TYPE_LABEL_EN={finger:'3.4 Finger Tapping',hand:'3.5 Hand Movements',pronation:'3.6 Pronation-Supination',tremor:'3.14 Rest Tremor',toe:'3.7 Toe Tapping',leg:'3.8 Leg Agility',actiontremor:'3.15 Action Tremor',posture:'3.12 Posture',gait:'3.9 Gait'};
+  const TYPE_LABEL_EN={finger:'3.4 Finger Tapping',hand:'3.5 Hand Movements',pronation:'3.6 Pronation-Supination',tremor:'3.14 Rest Tremor',toe:'3.7 Toe Tapping',leg:'3.8 Leg Agility',actiontremor:'3.15 Action Tremor',posture:'3.12 Posture',gait:'3.9 Gait',face:'3.2 Facial Expression'};
   const SEV_EN=['Normal','Mild','Moderate','Severe','Very severe'];
 
   const byType={};
@@ -1102,7 +1109,7 @@ function drawAdminDailyChart(daily) {
 function renderAdminByType(byType) {
   const el=document.getElementById('adminByType');
   const maxCnt=Math.max(...byType.map(t=>t.cnt),1);
-  const TYPE_LABEL={finger:'3.4 FINGER',hand:'3.5 HAND',pronation:'3.6 PRONATION',tremor:'3.14 TREMOR',toe:'3.7 TOE',leg:'3.8 LEG',actiontremor:'3.15 A.TREMOR',posture:'3.12 POSTURE',gait:'3.9 GAIT'};
+  const TYPE_LABEL={finger:'3.4 FINGER',hand:'3.5 HAND',pronation:'3.6 PRONATION',tremor:'3.14 TREMOR',toe:'3.7 TOE',leg:'3.8 LEG',actiontremor:'3.15 A.TREMOR',posture:'3.12 POSTURE',gait:'3.9 GAIT',face:'3.2 FACE'};
   el.innerHTML=byType.map(t=>`
     <div class="admin-type-row">
       <div class="admin-type-dot" style="background:${TYPE_COLORS[t.type]||'#fff'};box-shadow:0 0 5px ${TYPE_COLORS[t.type]||'#fff'}"></div>
@@ -1133,7 +1140,7 @@ const FINGER_FREQS = [523,659,784,1047];
 const TAP_THRESH   = 0.065;
 const TAP_COOLDOWN = 140;
 const COMBO_WINDOW = 1300;
-const TEST_DURATIONS   = {finger:10000, hand:10000, pronation:10000, tremor:15000, toe:10000, leg:10000, actiontremor:15000, posture:15000, gait:20000};
+const TEST_DURATIONS   = {finger:10000, hand:10000, pronation:10000, tremor:15000, toe:10000, leg:10000, actiontremor:15000, posture:15000, gait:20000, face:15000};
 const ARREST_THRESHOLD = 600;
 const CIRCUMFERENCE    = 2 * Math.PI * 46;
 
@@ -1188,6 +1195,14 @@ const gaitArmSwings = [];
 const prevAnkleUpGait = {left:false, right:false};
 const gaitAnkleBase   = {left:-1,    right:-1};
 const lastGaitStepMs  = {left:0,     right:0};
+// 3.2 Facial Expression state
+let faceMeshModel = null, faceMeshResults = null;
+let faceMeshModelLoaded = false, faceMeshModelLoading = false;
+const faceBlinkBuffer = [];
+const faceExprBuffer  = [];
+let faceLastEAR = {left:1, right:1};
+let faceBlinkInProgress = false;
+let faceLastBlinkMs = 0;
 
 // Video analysis
 let pendingResolve = null;   // resolves after each hands.onResults in video mode
@@ -1837,6 +1852,7 @@ const ASSESS_META = {
   actiontremor: {num:'3.15', name:'ACTION TREMOR',         color:'#ff6b9d', desc:'팔을 앞으로 수평으로 뻗어 15초간 유지하세요.\n손목이 카메라에 잘 보이게 위치시키세요.\n최대한 힘을 빼고 자연스럽게 유지합니다.'},
   posture:      {num:'3.12', name:'POSTURE',               color:'#4fc3f7', desc:'카메라 앞 정면에 자연스럽게 서세요.\n상체(머리~허리)가 모두 보이게 위치시키세요.\n15초간 평소 자세를 유지합니다.'},
   gait:         {num:'3.9',  name:'GAIT',                  color:'#fb923c', desc:'카메라 앞에서 좌우로 천천히 걸으세요.\n전신(머리~발목)이 보이게 위치시키세요.\n20초간 평소 걸음 속도로 걷습니다.'},
+  face:         {num:'3.2',  name:'FACIAL EXPRESSION',     color:'#e879f9', desc:'카메라 정면을 바라보세요.\n얼굴 전체(이마~턱)가 잘 보이게 위치시키세요.\n평소처럼 자연스럽게 15초간 유지합니다.'},
 };
 function selectAssessment(type) {
   testType = type;
@@ -1846,6 +1862,7 @@ function selectAssessment(type) {
 
   // Lazy-load pose model for toe/leg
   if(type==='toe'||type==='leg'||type==='posture'||type==='gait') loadPoseModel();
+  if(type==='face') loadFaceMeshModel();
 
   // Start camera + render loop on first assessment selection
   if (!cameraStarted) {
@@ -1894,6 +1911,10 @@ function startTest() {
     kneeBaseY.left=kneeBaseY.right=-1;   prevKneeUp.left=prevKneeUp.right=false;
   }
   if(testType==='posture'){ postureBuffer.length=0; }
+  if(testType==='face'){
+    faceBlinkBuffer.length=0; faceExprBuffer.length=0;
+    faceBlinkInProgress=false; faceLastBlinkMs=0; faceLastEAR={left:1,right:1};
+  }
   if(testType==='gait'){
     gaitSteps.length=0; gaitArmSwings.length=0;
     gaitAnkleBase.left=gaitAnkleBase.right=-1;
@@ -1913,6 +1934,7 @@ function endTest() {
   if(testType==='tremor'||testType==='actiontremor'){ showTremorResults(); return; }
   if(testType==='posture'){ showPostureResults(); return; }
   if(testType==='gait'){ showGaitResults(); return; }
+  if(testType==='face'){ showFaceResults(); return; }
   const dur = (TEST_DURATIONS[testType] || 10000) / 1000;
   const m = ASSESS_META[testType] || ASSESS_META.finger;
   showResults(dur, `UPDRS ${m.num} — ${m.name}`);
@@ -2661,6 +2683,222 @@ function showGaitResults() {
 }
 
 // ═══════════════════════════════════════════
+// 3.2 FACIAL EXPRESSION — FaceMesh
+// ═══════════════════════════════════════════
+function loadFaceMeshModel() {
+  if(faceMeshModelLoaded||faceMeshModelLoading) return;
+  faceMeshModelLoading=true;
+  const s=document.createElement('script');
+  s.src='https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js';
+  s.crossOrigin='anonymous';
+  s.onload=()=>{
+    try{
+      faceMeshModel=new FaceMesh({locateFile:f=>`https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}`});
+      faceMeshModel.setOptions({maxNumFaces:1,refineLandmarks:true,minDetectionConfidence:0.7,minTrackingConfidence:0.5});
+      faceMeshModel.onResults(r=>{ faceMeshResults=r; });
+      faceMeshModelLoaded=true;
+    }catch(e){ console.error('FaceMesh init:',e); }
+  };
+  document.head.appendChild(s);
+}
+
+function faceD(lm,i,j){ const a=lm[i],b=lm[j]; return Math.hypot(a.x-b.x,a.y-b.y); }
+
+function detectFace(lm) {
+  if(!lm||testState!=='running') return;
+  const now=Date.now();
+  // EAR: left eye (160,144,158,153,33,133), right eye (385,373,387,380,362,263)
+  const leftEAR  = (faceD(lm,160,144)+faceD(lm,158,153))/(2*faceD(lm,33,133)+1e-5);
+  const rightEAR = (faceD(lm,385,373)+faceD(lm,387,380))/(2*faceD(lm,362,263)+1e-5);
+  const avgEAR   = (leftEAR+rightEAR)/2;
+  faceLastEAR    = {left:leftEAR, right:rightEAR};
+
+  // Blink detection (EAR drops below threshold then rises)
+  const EAR_THRESH=0.20, BLINK_CD=300;
+  if(avgEAR<EAR_THRESH && !faceBlinkInProgress){ faceBlinkInProgress=true; }
+  else if(avgEAR>=EAR_THRESH && faceBlinkInProgress){
+    faceBlinkInProgress=false;
+    if(now-faceLastBlinkMs>BLINK_CD){
+      faceBlinkBuffer.push(now); faceLastBlinkMs=now;
+      effects.push(new ScreenFlash('#e879f9',0.22,70));
+      effects.push(new FloatingText(canvas.width/2,canvas.height*0.35,
+        `BLINK ×${faceBlinkBuffer.length}`,'#e879f9',0.9));
+      graphPulse=1.0;
+    }
+  }
+
+  // Expression variability: mouth open + brow-eye gap
+  const faceH=faceD(lm,10,152)+1e-4;
+  const mouthOpen=faceD(lm,13,14)/faceH;
+  const leftBrowY =(lm[66].y+lm[105].y)/2;
+  const rightBrowY=(lm[296].y+lm[334].y)/2;
+  const leftEyeY  =(lm[159].y+lm[145].y)/2;
+  const rightEyeY =(lm[386].y+lm[374].y)/2;
+  const browLift  =Math.max(0,((leftEyeY-leftBrowY)+(rightEyeY-rightBrowY))/2/faceH);
+  faceExprBuffer.push({t:now, mouthOpen, browLift, ear:avgEAR});
+}
+
+function scoreFace() {
+  const n=faceExprBuffer.length;
+  const durSec=(TEST_DURATIONS.face||15000)/1000;
+  const blinkPM=(faceBlinkBuffer.length/durSec)*60;
+  const blinkScore=blinkPM>=12?0:blinkPM>=8?1:blinkPM>=5?2:blinkPM>=2?3:4;
+  let exprScore=2;
+  if(n>0){
+    let mSum=0,bSum=0;
+    faceExprBuffer.forEach(f=>{mSum+=f.mouthOpen;bSum+=f.browLift;});
+    const mMean=mSum/n,bMean=bSum/n;
+    let mVar=0,bVar=0;
+    faceExprBuffer.forEach(f=>{mVar+=(f.mouthOpen-mMean)**2;bVar+=(f.browLift-bMean)**2;});
+    const exprVar=Math.sqrt(mVar/n)*0.6+Math.sqrt(bVar/n)*0.4;
+    exprScore=exprVar>=0.012?0:exprVar>=0.008?1:exprVar>=0.005?2:exprVar>=0.002?3:4;
+    const score=Math.min(4,Math.round(blinkScore*0.6+exprScore*0.4));
+    return {score,blinkPM,blinkCount:faceBlinkBuffer.length,exprVar,exprScore,blinkScore,n};
+  }
+  return {score:blinkScore,blinkPM,blinkCount:faceBlinkBuffer.length,exprVar:0,exprScore,blinkScore,n};
+}
+
+function showFaceResults() {
+  const {score,blinkPM,blinkCount,exprVar,exprScore,blinkScore,n}=scoreFace();
+  const UPDRS_COLORS=['#00ffcc','#88ff44','#ffff00','#ff8800','#ff2244'];
+  const UPDRS_LABELS=['정상','경미한 감소','중등도 감소','심각한 감소','표정 고정'];
+  const UPDRS_DESC  =['정상 범위의 깜빡임과 표정 변화','약간의 표정 감소','명확한 표정 감소','심한 무표정, 입 열림 간헐적','마스크 얼굴, 심한 무표정'];
+  const FC=['#00ffcc','#88ff44','#ffff00','#ff8800','#ff2244'];
+  const color=UPDRS_COLORS[score];
+  const durSec=(TEST_DURATIONS.face||15000)/1000;
+  const el=s=>document.getElementById(s);
+  el('resultsTitleH2').textContent='UPDRS 3.2 — FACIAL EXPRESSION';
+  el('updrsScore').textContent=score;
+  el('updrsScore').style.color=color;
+  el('updrsScore').style.textShadow=`0 0 50px ${color}`;
+  el('updrsLabel').textContent=`FACIAL EXPR. — ${UPDRS_LABELS[score]}`;
+  el('updrsDesc').textContent=UPDRS_DESC[score];
+  el('resTaps').textContent=blinkCount;
+  el('lblTaps').textContent=`BLINKS / ${durSec}s`;
+  el('resFreq').textContent=blinkPM.toFixed(1);
+  el('resArrests').textContent=`${blinkScore}/4`;
+  el('resITI').textContent=`${exprScore}/4`;
+  el('resMaxAmp').textContent=(exprVar*1000).toFixed(1);
+  el('resFatig').textContent=`${n}`;
+  // Blink timeline bar chart
+  const chartEl=el('ampChart'); chartEl.innerHTML='';
+  if(faceExprBuffer.length>1){
+    const earVals=faceExprBuffer.map(f=>f.ear);
+    const earMin=Math.min(...earVals), earMax=Math.max(...earVals,earMin+0.01);
+    const show=Math.min(faceExprBuffer.length,80);
+    faceExprBuffer.slice(-show).forEach(f=>{
+      const pct=((f.ear-earMin)/(earMax-earMin))*100;
+      const c=f.ear<0.2?'#ff4444':f.ear<0.3?'#ffaa00':'#e879f9';
+      const b=document.createElement('div'); b.className='amp-bar';
+      b.style.cssText=`height:${Math.max(4,pct)}%;background:${c};box-shadow:0 0 4px ${c};`;
+      chartEl.appendChild(b);
+    });
+  }
+  [[  'freq',blinkScore],['arrest',exprScore],['rhythm',0],['amp',score],['fatig',0]].forEach(([id,fs])=>{
+    const c=FC[Math.min(fs,4)];
+    el(`fb-${id}`).style.width=`${(fs/4)*100}%`; el(`fb-${id}`).style.background=c; el(`fb-${id}`).style.boxShadow=`0 0 6px ${c}`;
+    el(`fs-${id}`).textContent=`${fs}/4`; el(`fs-${id}`).style.color=c;
+  });
+  const confidence=n>=300?'HIGH':n>=100?'MEDIUM':'LOW';
+  const confC={HIGH:'#00ffcc',MEDIUM:'#ffff00',LOW:'#ff8800'};
+  const ct=el('confidenceTag'); ct.textContent=`${confidence} CONFIDENCE  (n=${n})`; ct.style.color=confC[confidence]; ct.style.borderColor=confC[confidence];
+  el('fatigVal').textContent=`깜빡임 ${blinkPM.toFixed(1)}/분  표정변화 ${(exprVar*1000).toFixed(1)}`;
+  el('fatigVal').style.color=color;
+  el('resultsOverlay').classList.add('visible');
+  lastResultPayload={
+    mode:'live', score, raw_score:parseFloat(blinkPM.toFixed(2)),
+    n_taps:blinkCount, frequency:parseFloat(blinkPM.toFixed(1)),
+    arrests:exprScore, iti_cv:parseFloat((exprVar*1000).toFixed(2)),
+    max_amplitude:parseFloat((exprVar).toFixed(5)), fatigability:0,
+    confidence, duration_sec:durSec,
+    factors:{test_type:'face',blink_per_min:parseFloat(blinkPM.toFixed(1)),blink_count:blinkCount,expr_variability:parseFloat((exprVar*1000).toFixed(2)),blink_score:blinkScore,expr_score:exprScore},
+  };
+  const saveBtn=el('saveResultBtn'), saveMsg=el('saveResultMsg');
+  saveBtn.style.display=''; saveBtn.disabled=false;
+  saveMsg.textContent=''; saveMsg.style.color='';
+  if(!currentUser) saveMsg.textContent='로그인하면 기록이 저장됩니다';
+}
+
+// Face Mesh landmark sets for drawing
+const FACE_OVAL=[10,338,297,332,284,251,389,356,454,323,361,288,397,365,379,378,400,377,152,148,176,149,150,136,172,58,132,93,234,127,162,21,54,103,67,109];
+const LEFT_EYE_RING =[33,160,158,133,153,144];
+const RIGHT_EYE_RING=[362,385,387,263,380,373];
+const LIPS_OUTER=[61,146,91,181,84,17,314,405,321,375,291,409,270,269,267,0,37,39,40,185];
+const LEFT_BROW =[70,63,105,66,107];
+const RIGHT_BROW=[336,296,334,293,300];
+
+function drawFaceMesh(lm) {
+  if(!lm) return;
+  const W=canvas.width, H=canvas.height;
+  const lx=i=>(1-lm[i].x)*W, ly=i=>lm[i].y*H;
+  const earAvg=(faceLastEAR.left+faceLastEAR.right)/2;
+  // Eye color: green(open)→red(closed)
+  const t=Math.max(0,Math.min(1,1-(earAvg-0.15)/(0.35-0.15)));
+  const eyeColor=`rgba(${Math.round(80+175*t)},${Math.round(220*(1-t))},${Math.round(200+55*t)},0.9)`;
+
+  ctx.save();
+
+  // Face oval (subtle mesh)
+  ctx.strokeStyle='rgba(232,121,249,0.12)'; ctx.lineWidth=1; ctx.shadowBlur=0;
+  ctx.beginPath();
+  FACE_OVAL.forEach((i,n)=>n===0?ctx.moveTo(lx(i),ly(i)):ctx.lineTo(lx(i),ly(i)));
+  ctx.closePath(); ctx.stroke();
+
+  // Eyebrows
+  ctx.strokeStyle='rgba(232,121,249,0.45)'; ctx.lineWidth=1.8; ctx.shadowBlur=6; ctx.shadowColor='#e879f9';
+  [LEFT_BROW,RIGHT_BROW].forEach(brow=>{
+    ctx.beginPath();
+    brow.forEach((i,n)=>n===0?ctx.moveTo(lx(i),ly(i)):ctx.lineTo(lx(i),ly(i)));
+    ctx.stroke();
+  });
+
+  // Eyes (colored by EAR)
+  ctx.strokeStyle=eyeColor; ctx.lineWidth=2.2; ctx.shadowBlur=16; ctx.shadowColor=eyeColor;
+  [LEFT_EYE_RING,RIGHT_EYE_RING].forEach(ring=>{
+    ctx.beginPath();
+    ring.forEach((i,n)=>n===0?ctx.moveTo(lx(i),ly(i)):ctx.lineTo(lx(i),ly(i)));
+    ctx.closePath(); ctx.stroke();
+  });
+
+  // Iris glow dots at eye center
+  [[33,133],[362,263]].forEach(([a,b])=>{
+    const cx=(lx(a)+lx(b))/2, cy=(ly(a)+ly(b))/2;
+    ctx.fillStyle=eyeColor; ctx.shadowBlur=20; ctx.shadowColor=eyeColor;
+    ctx.beginPath(); ctx.arc(cx,cy,3.5,0,Math.PI*2); ctx.fill();
+  });
+
+  // Lips: color by mouth openness
+  const mOpen=faceD(lm,13,14)/(faceD(lm,10,152)+1e-4);
+  const lt=Math.min(1,mOpen/0.06);
+  const lipC=`rgba(${Math.round(200+55*lt)},${Math.round(120*(1-lt*0.6))},${Math.round(230*(1-lt*0.4))},0.8)`;
+  ctx.strokeStyle=lipC; ctx.lineWidth=1.8; ctx.shadowColor=lipC; ctx.shadowBlur=10;
+  ctx.beginPath();
+  LIPS_OUTER.forEach((i,n)=>n===0?ctx.moveTo(lx(i),ly(i)):ctx.lineTo(lx(i),ly(i)));
+  ctx.closePath(); ctx.stroke();
+
+  // HUD: blink count + rate (top-right)
+  if(testState==='running'){
+    const blinks=faceBlinkBuffer.length;
+    const durSec=Math.max(1,(Date.now()-testData.startTime)/1000);
+    const bpm=(blinks/durSec)*60;
+    const bpmC=bpm>=12?'#00ffcc':bpm>=6?'#ffff00':'#ff4444';
+    ctx.shadowBlur=10; ctx.shadowColor=bpmC;
+    ctx.font='bold 14px monospace'; ctx.fillStyle=bpmC; ctx.textAlign='right';
+    ctx.fillText(`BLINK ${blinks}×  (${bpm.toFixed(1)}/min)`, W-18, 50);
+    const earC=earAvg<0.2?'#ff4444':earAvg<0.28?'#ffaa00':'#00ffcc';
+    ctx.font='11px monospace'; ctx.fillStyle=`rgba(255,255,255,0.5)`;
+    ctx.shadowBlur=0;
+    ctx.fillText(`EAR ${earAvg.toFixed(3)}`, W-18, 67);
+    // Blink rate severity label
+    const sev=['NORMAL','MILD↓','MODERATE↓','SEVERE↓','FIXED'];
+    const si=bpm>=12?0:bpm>=8?1:bpm>=5?2:bpm>=2?3:4;
+    ctx.font='bold 11px monospace'; ctx.fillStyle=bpmC; ctx.shadowBlur=8; ctx.shadowColor=bpmC;
+    ctx.fillText(sev[si], W-18, 84);
+  }
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════════
 // HAND SKELETON
 // ═══════════════════════════════════════════
 function drawHand(landmarks, activeFingers, opts = {}) {
@@ -2711,6 +2949,9 @@ function frame() {
         else if(testType==='gait')   detectGait(poseResults.poseLandmarks);
         drawPoseSkeleton(poseResults.poseLandmarks);
       }
+    } else if(testType==='face') {
+      const fl=faceMeshResults?.multiFaceLandmarks?.[0];
+      if(fl){ detectFace(fl); drawFaceMesh(fl); }
     } else if(handResults&&handResults.multiHandLandmarks){
       handResults.multiHandLandmarks.forEach((lm,hi)=>{
         let active=[false,false,false,false];
@@ -2754,6 +2995,8 @@ try {
       if(appMode!=='video'){
         if((testType==='toe'||testType==='leg'||testType==='posture'||testType==='gait')&&poseModelLoaded&&poseModel){
           await poseModel.send({image:video});
+        } else if(testType==='face'&&faceMeshModelLoaded&&faceMeshModel){
+          await faceMeshModel.send({image:video});
         } else {
           await hands.send({image:video});
         }
