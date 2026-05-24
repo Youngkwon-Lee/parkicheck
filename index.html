@@ -2884,21 +2884,11 @@ function drawFaceMesh(lm) {
     ctx.fill();
   }
 
-  // ② Face silhouette — dynamic ellipse from actual landmark bounding box
-  {
-    let minX=Infinity, maxX=-Infinity, minY=Infinity, maxY=-Infinity;
-    for(let i=0;i<468;i++){
-      const x=lx(i), y=ly(i);
-      if(x<minX)minX=x; if(x>maxX)maxX=x;
-      if(y<minY)minY=y; if(y>maxY)maxY=y;
-    }
-    const fcx=(minX+maxX)/2, fcy=(minY+maxY)/2;
-    const rx=(maxX-minX)/2+12, ry=(maxY-minY)/2+10; // 12/10px padding
-    ctx.strokeStyle='rgba(232,121,249,0.6)'; ctx.lineWidth=2; ctx.shadowBlur=12; ctx.shadowColor='#e879f9';
-    ctx.beginPath();
-    ctx.ellipse(fcx, fcy, rx, ry, 0, 0, Math.PI*2);
-    ctx.stroke();
-  }
+  // ② Face silhouette — actual FM_OVAL landmark path (tracks real jaw/cheek/forehead shape)
+  ctx.strokeStyle='rgba(232,121,249,0.65)'; ctx.lineWidth=2.2; ctx.shadowBlur=12; ctx.shadowColor='#e879f9';
+  ctx.beginPath();
+  FM_OVAL_PTS.forEach((i,n)=>n===0?ctx.moveTo(lx(i),ly(i)):ctx.lineTo(lx(i),ly(i)));
+  ctx.closePath(); ctx.stroke();
 
   // ③ Eyebrows
   ctx.strokeStyle='rgba(232,121,249,0.65)'; ctx.lineWidth=2.2; ctx.shadowBlur=9; ctx.shadowColor='#e879f9';
