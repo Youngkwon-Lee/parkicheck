@@ -2697,10 +2697,10 @@ try {
 // ═══════════════════════════════════════════
 const $=s=>document.getElementById(s);
 
-// startBtn is now a fallback (getSession handles auto-show on load)
 $('startBtn').addEventListener('click', ()=>{
   $('startOverlay').classList.add('hidden');
-  $('landingOverlay').classList.remove('hidden');
+  switchAuthTab('login');
+  $('authOverlay').classList.remove('hidden');
 });
 
 // Landing CTA buttons
