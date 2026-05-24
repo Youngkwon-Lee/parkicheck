@@ -7,6 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <title>ParkiCheck — Parkinson's Finger Tap Test</title>
 
+  <script defer src="/_vercel/insights/script.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
@@ -225,6 +226,30 @@
     .hist-date { font-size:0.68rem; color:rgba(255,255,255,0.38); letter-spacing:1px; }
     .hist-detail { font-size:0.72rem; color:rgba(255,255,255,0.58); margin-top:2px; }
     .hist-type-badge { font-size:0.56rem; letter-spacing:1px; padding:2px 7px; border-radius:8px; background:rgba(255,255,255,0.07); color:rgba(255,255,255,0.38); margin-left:4px; }
+
+    /* ── Admin Dashboard ── */
+    #adminOverlay { position:absolute; inset:0; z-index:90; background:rgba(0,0,0,0.75); backdrop-filter:blur(12px); overflow-y:auto; display:flex; justify-content:center; align-items:flex-start; padding:40px 16px; transition:opacity 0.4s; }
+    .admin-card { background:rgba(4,6,16,0.97); border:1px solid rgba(255,255,255,0.1); border-radius:20px; padding:24px; width:100%; max-width:620px; }
+    .admin-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; }
+    .admin-title { font-size:0.65rem; letter-spacing:5px; color:rgba(255,255,255,0.35); }
+    .admin-stats-row { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:18px; }
+    .admin-stat-box { background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.07); border-radius:12px; padding:14px 10px; text-align:center; }
+    .admin-stat-val { font-size:1.8rem; font-weight:bold; color:#fff; line-height:1; }
+    .admin-stat-lbl { font-size:0.55rem; letter-spacing:2px; color:rgba(255,255,255,0.3); margin-top:5px; }
+    .admin-sec { font-size:0.58rem; letter-spacing:3px; color:rgba(255,255,255,0.28); margin:16px 0 8px; }
+    #adminDailyChart { display:block; width:100%; height:90px; }
+    .admin-2col { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:4px; }
+    .admin-type-row { display:flex; align-items:center; gap:8px; margin-bottom:7px; }
+    .admin-type-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+    .admin-type-name { font-size:0.62rem; color:rgba(255,255,255,0.55); flex:1; }
+    .admin-type-bar-wrap { width:60px; height:4px; background:rgba(255,255,255,0.07); border-radius:2px; overflow:hidden; }
+    .admin-type-bar { height:100%; border-radius:2px; }
+    .admin-type-cnt { font-size:0.65rem; color:rgba(255,255,255,0.5); min-width:22px; text-align:right; }
+    .admin-score-row { display:flex; align-items:center; gap:8px; margin-bottom:7px; }
+    .admin-score-num { font-size:0.7rem; font-weight:bold; min-width:14px; }
+    .admin-score-bar-wrap { flex:1; height:5px; background:rgba(255,255,255,0.07); border-radius:3px; overflow:hidden; }
+    .admin-score-bar { height:100%; border-radius:3px; }
+    .admin-score-cnt { font-size:0.62rem; color:rgba(255,255,255,0.45); min-width:22px; text-align:right; }
   </style>
 </head>
 <body>
@@ -338,7 +363,36 @@
     <span id="profileEmail">—</span>
     <div id="profileMenu">
       <div class="pmenu-item" onclick="showHistory()">📊 내 기록</div>
+      <div class="pmenu-item" id="pmenuAdmin" style="display:none" onclick="showAdmin()">⚙️ 어드민</div>
       <div class="pmenu-item danger" onclick="doSignOut()">로그아웃</div>
+    </div>
+  </div>
+
+  <!-- Admin Dashboard -->
+  <div id="adminOverlay" class="hidden">
+    <div class="admin-card">
+      <div class="admin-header">
+        <span class="admin-title">⚙ ADMIN DASHBOARD</span>
+        <button class="btn-primary btn-ghost" style="font-size:0.62rem;padding:6px 13px" onclick="$('adminOverlay').classList.add('hidden')">닫기</button>
+      </div>
+      <div class="admin-stats-row">
+        <div class="admin-stat-box"><div class="admin-stat-val" id="adminTotalUsers">—</div><div class="admin-stat-lbl">TOTAL USERS</div></div>
+        <div class="admin-stat-box"><div class="admin-stat-val" id="adminActiveUsers">—</div><div class="admin-stat-lbl">ACTIVE USERS</div></div>
+        <div class="admin-stat-box"><div class="admin-stat-val" id="adminTotalAssess">—</div><div class="admin-stat-lbl">ASSESSMENTS</div></div>
+        <div class="admin-stat-box"><div class="admin-stat-val" id="adminToday">—</div><div class="admin-stat-lbl">TODAY</div></div>
+      </div>
+      <div class="admin-sec">DAILY ACTIVITY — LAST 14 DAYS</div>
+      <canvas id="adminDailyChart"></canvas>
+      <div class="admin-2col" style="margin-top:16px">
+        <div>
+          <div class="admin-sec">BY TEST TYPE</div>
+          <div id="adminByType"></div>
+        </div>
+        <div>
+          <div class="admin-sec">SCORE DISTRIBUTION</div>
+          <div id="adminScoreDist"></div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -603,11 +657,14 @@ supa.auth.getSession().then(({ data }) => {
   document.getElementById('authOverlay').classList.remove('hidden');
 });
 
+const ADMIN_EMAIL = 'kwon3856@gmail.com';
+
 function updateAuthUI() {
   const pb = document.getElementById('profileBadge');
   if (currentUser) {
     pb.classList.remove('hidden');
     document.getElementById('profileEmail').textContent = currentUser.email;
+    document.getElementById('pmenuAdmin').style.display = currentUser.email === ADMIN_EMAIL ? '' : 'none';
   } else {
     pb.classList.add('hidden');
   }
@@ -943,6 +1000,106 @@ function generateReport() {
 
   const w=window.open('','_blank','width=820,height=640');
   if(w){w.document.write(html);w.document.close();}
+}
+
+// ═══════════════════════════════════════════
+// ADMIN DASHBOARD
+// ═══════════════════════════════════════════
+async function showAdmin() {
+  if(currentUser?.email !== ADMIN_EMAIL) return;
+  document.getElementById('profileMenu').classList.remove('open');
+  document.getElementById('adminOverlay').classList.remove('hidden');
+  // Reset to loading state
+  ['adminTotalUsers','adminActiveUsers','adminTotalAssess','adminToday'].forEach(id=>{
+    document.getElementById(id).textContent='…';
+  });
+  document.getElementById('adminByType').innerHTML='';
+  document.getElementById('adminScoreDist').innerHTML='';
+
+  const { data, error } = await supa.rpc('admin_get_stats');
+  if(error){
+    document.getElementById('adminByType').innerHTML=`<div class="hist-empty" style="font-size:0.7rem">오류: ${error.message}<br><small>Supabase SQL Editor에서 admin_get_stats() 함수를 먼저 만들어주세요.</small></div>`;
+    return;
+  }
+  renderAdminDashboard(data);
+}
+
+function renderAdminDashboard(s) {
+  document.getElementById('adminTotalUsers').textContent   = s.total_users   ?? '—';
+  document.getElementById('adminActiveUsers').textContent  = s.unique_users  ?? '—';
+  document.getElementById('adminTotalAssess').textContent  = s.total_assessments ?? '—';
+
+  const todayStr = new Date().toLocaleDateString('sv-SE'); // YYYY-MM-DD
+  const todayEntry = (s.daily_14d||[]).find(d=>d.day===todayStr);
+  document.getElementById('adminToday').textContent = todayEntry?.cnt ?? 0;
+
+  setTimeout(()=>drawAdminDailyChart(s.daily_14d||[]), 30);
+  renderAdminByType(s.by_type||[]);
+  renderAdminScoreDist(s.score_dist||[]);
+}
+
+function drawAdminDailyChart(daily) {
+  const canvas = document.getElementById('adminDailyChart');
+  if(!canvas) return;
+  const dpr = window.devicePixelRatio||1;
+  canvas.width  = canvas.offsetWidth  * dpr;
+  canvas.height = canvas.offsetHeight * dpr;
+  const ctx = canvas.getContext('2d');
+  const RW = canvas.width/dpr, RH = canvas.height/dpr;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,RW,RH);
+  if(!daily.length) return;
+
+  const pad={t:14,r:8,b:20,l:8};
+  const iW=RW-pad.l-pad.r, iH=RH-pad.t-pad.b;
+  const n=daily.length;
+  const maxCnt=Math.max(...daily.map(d=>d.cnt),1);
+  const bw=Math.max(4, iW/n-3);
+
+  daily.forEach((d,i)=>{
+    const x=pad.l+i*(iW/n)+(iW/n-bw)/2;
+    const h=Math.max(2,(d.cnt/maxCnt)*iH);
+    const y=pad.t+iH-h;
+    const ratio=d.cnt/maxCnt;
+    const col=ratio>0.6?'#00ffcc':ratio>0.2?'#60a5fa':'#475569';
+    ctx.fillStyle=col; ctx.shadowBlur=ratio>0.4?8:0; ctx.shadowColor=col;
+    ctx.beginPath();
+    if(ctx.roundRect) ctx.roundRect(x,y,bw,h,2); else ctx.rect(x,y,bw,h);
+    ctx.fill(); ctx.shadowBlur=0;
+    if(d.cnt>0){
+      ctx.fillStyle='rgba(255,255,255,0.7)'; ctx.font=`8px "Courier New",monospace`; ctx.textAlign='center';
+      ctx.fillText(d.cnt,x+bw/2,y-3);
+    }
+    if(i===0||i===n-1||i===Math.floor(n/2)){
+      const parts=(d.day||'').split('-');
+      ctx.fillStyle='rgba(255,255,255,0.25)'; ctx.font='7px "Courier New",monospace'; ctx.textAlign='center';
+      ctx.fillText(parts.length===3?`${parts[1]}/${parts[2]}`:'',x+bw/2,pad.t+iH+14);
+    }
+  });
+}
+
+function renderAdminByType(byType) {
+  const el=document.getElementById('adminByType');
+  const maxCnt=Math.max(...byType.map(t=>t.cnt),1);
+  const TYPE_LABEL={finger:'3.4 FINGER',hand:'3.5 HAND',pronation:'3.6 PRONATION',tremor:'3.14 TREMOR',toe:'3.7 TOE',leg:'3.8 LEG'};
+  el.innerHTML=byType.map(t=>`
+    <div class="admin-type-row">
+      <div class="admin-type-dot" style="background:${TYPE_COLORS[t.type]||'#fff'};box-shadow:0 0 5px ${TYPE_COLORS[t.type]||'#fff'}"></div>
+      <span class="admin-type-name">${TYPE_LABEL[t.type]||t.type}</span>
+      <div class="admin-type-bar-wrap"><div class="admin-type-bar" style="width:${(t.cnt/maxCnt)*100}%;background:${TYPE_COLORS[t.type]||'#fff'}"></div></div>
+      <span class="admin-type-cnt">${t.cnt}</span>
+    </div>`).join('');
+}
+
+function renderAdminScoreDist(dist) {
+  const el=document.getElementById('adminScoreDist');
+  const maxCnt=Math.max(...dist.map(d=>d.cnt),1);
+  el.innerHTML=dist.map(d=>`
+    <div class="admin-score-row">
+      <span class="admin-score-num" style="color:${SCORE_COLORS[d.score]||'#fff'}">${d.score}</span>
+      <div class="admin-score-bar-wrap"><div class="admin-score-bar" style="width:${(d.cnt/maxCnt)*100}%;background:${SCORE_COLORS[d.score]||'#fff'}"></div></div>
+      <span class="admin-score-cnt">${d.cnt}</span>
+    </div>`).join('');
 }
 
 // ═══════════════════════════════════════════
