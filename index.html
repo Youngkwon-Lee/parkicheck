@@ -422,6 +422,9 @@
           <button class="hist-filter-btn" style="--fc:#a78bfa" onclick="setHistFilter('tremor',this)">3.14</button>
           <button class="hist-filter-btn" style="--fc:#00ff88" onclick="setHistFilter('toe',this)">3.7</button>
           <button class="hist-filter-btn" style="--fc:#ffee00" onclick="setHistFilter('leg',this)">3.8</button>
+          <button class="hist-filter-btn" style="--fc:#ff6b9d" onclick="setHistFilter('actiontremor',this)">3.15</button>
+          <button class="hist-filter-btn" style="--fc:#4fc3f7" onclick="setHistFilter('posture',this)">3.12</button>
+          <button class="hist-filter-btn" style="--fc:#fb923c" onclick="setHistFilter('gait',this)">3.9</button>
         </div>
       </div>
 
@@ -514,6 +517,24 @@
         <div class="assess-num">UPDRS 3.8</div>
         <div class="assess-name">LEG AGILITY</div>
         <div class="assess-desc">무릎 들기 빈도·높이·리듬</div>
+        <div class="assess-dot"></div>
+      </div>
+      <div class="assess-card" style="--ac:#ff6b9d" onclick="selectAssessment('actiontremor')">
+        <div class="assess-num">UPDRS 3.15</div>
+        <div class="assess-name">ACTION TREMOR</div>
+        <div class="assess-desc">손 뻗기 중 떨림 주파수·진폭</div>
+        <div class="assess-dot"></div>
+      </div>
+      <div class="assess-card" style="--ac:#4fc3f7" onclick="selectAssessment('posture')">
+        <div class="assess-num">UPDRS 3.12</div>
+        <div class="assess-name">POSTURE</div>
+        <div class="assess-desc">자세 이상·측면기울기·어깨비대칭</div>
+        <div class="assess-dot"></div>
+      </div>
+      <div class="assess-card" style="--ac:#fb923c" onclick="selectAssessment('gait')">
+        <div class="assess-num">UPDRS 3.9</div>
+        <div class="assess-name">GAIT</div>
+        <div class="assess-desc">걸음 속도·좌우비대칭·팔흔들기</div>
         <div class="assess-dot"></div>
       </div>
     </div>
@@ -833,7 +854,7 @@ function saveMedLog() {
 }
 
 // ── Chart rendering ───────────────────────────
-const TYPE_COLORS = {finger:'#00ffcc',hand:'#ff00ff',pronation:'#ff8800',tremor:'#a78bfa',toe:'#00ff88',leg:'#ffee00'};
+const TYPE_COLORS = {finger:'#00ffcc',hand:'#ff00ff',pronation:'#ff8800',tremor:'#a78bfa',toe:'#00ff88',leg:'#ffee00',actiontremor:'#ff6b9d',posture:'#4fc3f7',gait:'#fb923c'};
 const SCORE_COLORS = ['#00ffcc','#88ff44','#ffff00','#ff8800','#ff2244'];
 
 function refreshHistChart() {
@@ -923,7 +944,7 @@ function drawHistChart(canvas, results, medLogs, filter) {
 function renderHistList() {
   const listEl = document.getElementById('historyList');
   if(!histResults.length&&!histMedLogs.length){listEl.innerHTML='<div class="hist-empty">아직 기록이 없습니다.</div>';return;}
-  const TYPE_LABEL={finger:'3.4 FINGER',hand:'3.5 HAND',pronation:'3.6 PRONATION',tremor:'3.14 TREMOR',toe:'3.7 TOE',leg:'3.8 LEG'};
+  const TYPE_LABEL={finger:'3.4 FINGER',hand:'3.5 HAND',pronation:'3.6 PRONATION',tremor:'3.14 TREMOR',toe:'3.7 TOE',leg:'3.8 LEG',actiontremor:'3.15 A.TREMOR',posture:'3.12 POSTURE',gait:'3.9 GAIT'};
   const SEVERITY=['정상','경미','중등도','심각','최중증'];
 
   const items=[
@@ -954,7 +975,7 @@ function generateReport() {
   const chartImg = canvas?.toDataURL('image/png') || '';
   const dateStr = new Date().toLocaleDateString('ko-KR');
   const email = currentUser?.email || 'Guest';
-  const TYPE_LABEL_EN={finger:'3.4 Finger Tapping',hand:'3.5 Hand Movements',pronation:'3.6 Pronation-Supination',tremor:'3.14 Rest Tremor',toe:'3.7 Toe Tapping',leg:'3.8 Leg Agility'};
+  const TYPE_LABEL_EN={finger:'3.4 Finger Tapping',hand:'3.5 Hand Movements',pronation:'3.6 Pronation-Supination',tremor:'3.14 Rest Tremor',toe:'3.7 Toe Tapping',leg:'3.8 Leg Agility',actiontremor:'3.15 Action Tremor',posture:'3.12 Posture',gait:'3.9 Gait'};
   const SEV_EN=['Normal','Mild','Moderate','Severe','Very severe'];
 
   const byType={};
@@ -1081,7 +1102,7 @@ function drawAdminDailyChart(daily) {
 function renderAdminByType(byType) {
   const el=document.getElementById('adminByType');
   const maxCnt=Math.max(...byType.map(t=>t.cnt),1);
-  const TYPE_LABEL={finger:'3.4 FINGER',hand:'3.5 HAND',pronation:'3.6 PRONATION',tremor:'3.14 TREMOR',toe:'3.7 TOE',leg:'3.8 LEG'};
+  const TYPE_LABEL={finger:'3.4 FINGER',hand:'3.5 HAND',pronation:'3.6 PRONATION',tremor:'3.14 TREMOR',toe:'3.7 TOE',leg:'3.8 LEG',actiontremor:'3.15 A.TREMOR',posture:'3.12 POSTURE',gait:'3.9 GAIT'};
   el.innerHTML=byType.map(t=>`
     <div class="admin-type-row">
       <div class="admin-type-dot" style="background:${TYPE_COLORS[t.type]||'#fff'};box-shadow:0 0 5px ${TYPE_COLORS[t.type]||'#fff'}"></div>
@@ -1112,7 +1133,7 @@ const FINGER_FREQS = [523,659,784,1047];
 const TAP_THRESH   = 0.065;
 const TAP_COOLDOWN = 140;
 const COMBO_WINDOW = 1300;
-const TEST_DURATIONS   = {finger:10000, hand:10000, pronation:10000, tremor:15000, toe:10000, leg:10000};
+const TEST_DURATIONS   = {finger:10000, hand:10000, pronation:10000, tremor:15000, toe:10000, leg:10000, actiontremor:15000, posture:15000, gait:20000};
 const ARREST_THRESHOLD = 600;
 const CIRCUMFERENCE    = 2 * Math.PI * 46;
 
@@ -1150,7 +1171,7 @@ const tremorBuffer = []; // {t,x,y} wrist samples
 let tremorLiveFreq = 0;
 const tremorLastRingT = {};
 
-// Pose (3.7 Toe / 3.8 Leg) state
+// Pose (3.7 Toe / 3.8 Leg / 3.12 Posture / 3.9 Gait) state
 let poseModel = null, poseResults = null;
 let poseModelLoaded = false, poseModelLoading = false;
 const prevAnkleUp  = {left:false, right:false};
@@ -1159,6 +1180,14 @@ const lastToeTapMs = {left:0,     right:0};
 const prevKneeUp   = {left:false, right:false};
 const kneeBaseY    = {left:-1,    right:-1};
 const lastLegTapMs = {left:0,     right:0};
+// 3.12 Posture state
+const postureBuffer = [];
+// 3.9 Gait state
+const gaitSteps = [];
+const gaitArmSwings = [];
+const prevAnkleUpGait = {left:false, right:false};
+const gaitAnkleBase   = {left:-1,    right:-1};
+const lastGaitStepMs  = {left:0,     right:0};
 
 // Video analysis
 let pendingResolve = null;   // resolves after each hands.onResults in video mode
@@ -1596,11 +1625,12 @@ function showTremorResults() {
   const FC2 = ['#00ffcc','#88ff44','#ffff00','#ff8800','#ff2244'];
   const el = s => document.getElementById(s);
 
-  el('resultsTitleH2').textContent = 'UPDRS 3.14-3.16 — REST TREMOR';
+  const isAction = testType === 'actiontremor';
+  el('resultsTitleH2').textContent = isAction ? 'UPDRS 3.15-3.17 — ACTION TREMOR' : 'UPDRS 3.14-3.16 — REST TREMOR';
   el('updrsScore').textContent = score;
   el('updrsScore').style.color = color;
   el('updrsScore').style.textShadow = `0 0 50px ${color}`;
-  el('updrsLabel').textContent = `TREMOR — ${UPDRS_LABELS[score]}`;
+  el('updrsLabel').textContent = `${isAction?'ACTION ':''}TREMOR — ${UPDRS_LABELS[score]}`;
   el('updrsDesc').textContent  = UPDRS_DESC[score];
 
   el('resTaps').textContent    = n;
@@ -1645,7 +1675,7 @@ function showTremorResults() {
     n_taps: n, frequency: parseFloat((tr.freq||0).toFixed(2)),
     arrests: 0, iti_cv: 0, max_amplitude: parseFloat(normAmp.toFixed(4)),
     fatigability: 0, confidence, duration_sec: dur,
-    factors: {test_type:'tremor', tremor_freq: parseFloat((tr.freq||0).toFixed(2)), tremor_amp: parseFloat(normAmp.toFixed(4))},
+    factors: {test_type: testType, tremor_freq: parseFloat((tr.freq||0).toFixed(2)), tremor_amp: parseFloat(normAmp.toFixed(4))},
   };
   const saveBtn=el('saveResultBtn'), saveMsg=el('saveResultMsg');
   saveBtn.style.display=''; saveBtn.disabled=false;
@@ -1798,12 +1828,15 @@ function setMode(mode) {
 // ASSESSMENT SELECTION
 // ═══════════════════════════════════════════
 const ASSESS_META = {
-  finger:    {num:'3.4',    name:'FINGER TAPPING',       color:'#00ffcc', desc:'검지를 엄지에 최대한 빠르고 넓게 탭하세요.\n10초간 측정합니다.'},
-  hand:      {num:'3.5',    name:'HAND MOVEMENTS',        color:'#ff00ff', desc:'주먹을 완전히 쥐었다가 완전히 펴세요.\n최대한 빠르고 크게 10초간 반복합니다.'},
-  pronation: {num:'3.6',    name:'PRONATION-SUPINATION',  color:'#ff8800', desc:'손바닥이 위-아래를 향하도록 뒤집으세요.\n팔꿈치를 구부린 채 10초간 반복합니다.'},
-  tremor:    {num:'3.14',   name:'REST TREMOR',            color:'#a78bfa', desc:'손을 무릎 위에 편안히 올려놓으세요.\n긴장을 풀고 15초간 정지합니다.\n카메라에 손목이 잘 보이게 위치시키세요.'},
-  toe:       {num:'3.7',    name:'TOE TAPPING',            color:'#00ff88', desc:'카메라가 발을 볼 수 있게 위치시키세요.\n발꿈치는 바닥에 고정하고\n발끝을 최대한 빠르고 높게 10초간 탭하세요.'},
-  leg:       {num:'3.8',    name:'LEG AGILITY',            color:'#ffee00', desc:'카메라가 무릎을 볼 수 있게 위치시키세요.\n무릎을 최대한 높이 들었다가\n빠르게 내리는 동작을 10초간 반복하세요.'},
+  finger:       {num:'3.4',  name:'FINGER TAPPING',      color:'#00ffcc', desc:'검지를 엄지에 최대한 빠르고 넓게 탭하세요.\n10초간 측정합니다.'},
+  hand:         {num:'3.5',  name:'HAND MOVEMENTS',       color:'#ff00ff', desc:'주먹을 완전히 쥐었다가 완전히 펴세요.\n최대한 빠르고 크게 10초간 반복합니다.'},
+  pronation:    {num:'3.6',  name:'PRONATION-SUPINATION', color:'#ff8800', desc:'손바닥이 위-아래를 향하도록 뒤집으세요.\n팔꿈치를 구부린 채 10초간 반복합니다.'},
+  tremor:       {num:'3.14', name:'REST TREMOR',           color:'#a78bfa', desc:'손을 무릎 위에 편안히 올려놓으세요.\n긴장을 풀고 15초간 정지합니다.\n카메라에 손목이 잘 보이게 위치시키세요.'},
+  toe:          {num:'3.7',  name:'TOE TAPPING',           color:'#00ff88', desc:'카메라가 발을 볼 수 있게 위치시키세요.\n발꿈치는 바닥에 고정하고\n발끝을 최대한 빠르고 높게 10초간 탭하세요.'},
+  leg:          {num:'3.8',  name:'LEG AGILITY',           color:'#ffee00', desc:'카메라가 무릎을 볼 수 있게 위치시키세요.\n무릎을 최대한 높이 들었다가\n빠르게 내리는 동작을 10초간 반복하세요.'},
+  actiontremor: {num:'3.15', name:'ACTION TREMOR',         color:'#ff6b9d', desc:'팔을 앞으로 수평으로 뻗어 15초간 유지하세요.\n손목이 카메라에 잘 보이게 위치시키세요.\n최대한 힘을 빼고 자연스럽게 유지합니다.'},
+  posture:      {num:'3.12', name:'POSTURE',               color:'#4fc3f7', desc:'카메라 앞 정면에 자연스럽게 서세요.\n상체(머리~허리)가 모두 보이게 위치시키세요.\n15초간 평소 자세를 유지합니다.'},
+  gait:         {num:'3.9',  name:'GAIT',                  color:'#fb923c', desc:'카메라 앞에서 좌우로 천천히 걸으세요.\n전신(머리~발목)이 보이게 위치시키세요.\n20초간 평소 걸음 속도로 걷습니다.'},
 };
 function selectAssessment(type) {
   testType = type;
@@ -1812,7 +1845,7 @@ function selectAssessment(type) {
   document.getElementById('assessSelector').classList.add('hidden');
 
   // Lazy-load pose model for toe/leg
-  if(type==='toe'||type==='leg') loadPoseModel();
+  if(type==='toe'||type==='leg'||type==='posture'||type==='gait') loadPoseModel();
 
   // Start camera + render loop on first assessment selection
   if (!cameraStarted) {
@@ -1854,11 +1887,18 @@ function startCountdown() {
 }
 function startTest() {
   testState='running';
-  if(testType==='tremor'){ tremorBuffer.length=0; tremorLiveFreq=0; }
+  if(testType==='tremor'||testType==='actiontremor'){ tremorBuffer.length=0; tremorLiveFreq=0; }
   // Reset pose baselines for fresh test
   if(testType==='toe'||testType==='leg'){
     ankleBaseY.left=ankleBaseY.right=-1; prevAnkleUp.left=prevAnkleUp.right=false;
     kneeBaseY.left=kneeBaseY.right=-1;   prevKneeUp.left=prevKneeUp.right=false;
+  }
+  if(testType==='posture'){ postureBuffer.length=0; }
+  if(testType==='gait'){
+    gaitSteps.length=0; gaitArmSwings.length=0;
+    gaitAnkleBase.left=gaitAnkleBase.right=-1;
+    prevAnkleUpGait.left=prevAnkleUpGait.right=false;
+    lastGaitStepMs.left=lastGaitStepMs.right=0;
   }
   Object.assign(testData,{taps:[],arrests:0,startTime:Date.now(),lastTapT:Date.now(),currentMaxDist:0,handSizeRef:0});
   document.getElementById('testHud').classList.add('visible');
@@ -1870,7 +1910,9 @@ function endTest() {
   if(testState!=='running') return;
   testState='done';
   document.getElementById('testHud').classList.remove('visible');
-  if(testType==='tremor'){ showTremorResults(); return; }
+  if(testType==='tremor'||testType==='actiontremor'){ showTremorResults(); return; }
+  if(testType==='posture'){ showPostureResults(); return; }
+  if(testType==='gait'){ showGaitResults(); return; }
   const dur = (TEST_DURATIONS[testType] || 10000) / 1000;
   const m = ASSESS_META[testType] || ASSESS_META.finger;
   showResults(dur, `UPDRS ${m.num} — ${m.name}`);
@@ -2320,14 +2362,228 @@ function drawPoseSkeleton(landmarks) {
     if(!la||!lb||(la.visibility!=null&&la.visibility<0.3)||(lb.visibility!=null&&lb.visibility<0.3)) return;
     ctx.beginPath(); ctx.moveTo((1-la.x)*W,la.y*H); ctx.lineTo((1-lb.x)*W,lb.y*H); ctx.stroke();
   });
-  // Highlight key landmarks
-  [[25,'#ffee00'],[26,'#ffee00'],[27,'#00ff88'],[28,'#00ff88']].forEach(([i,c])=>{
+  // Highlight key landmarks per test type
+  const hlMap = {
+    toe:     [[25,'#ffee00'],[26,'#ffee00'],[27,'#00ff88'],[28,'#00ff88']],
+    leg:     [[25,'#ffee00'],[26,'#ffee00'],[27,'#00ff88'],[28,'#00ff88']],
+    posture: [[0,'#ffffff'],[11,'#4fc3f7'],[12,'#4fc3f7'],[23,'#ffee00'],[24,'#ffee00']],
+    gait:    [[27,'#fb923c'],[28,'#fb923c'],[15,'#00ffcc'],[16,'#00ffcc']],
+  };
+  (hlMap[testType]||hlMap.toe).forEach(([i,c])=>{
     const lm=landmarks[i];
     if(!lm||(lm.visibility!=null&&lm.visibility<0.3)) return;
     ctx.fillStyle=c; ctx.shadowBlur=12; ctx.shadowColor=c;
     ctx.beginPath(); ctx.arc((1-lm.x)*W,lm.y*H,6,0,Math.PI*2); ctx.fill();
   });
   ctx.restore();
+}
+
+// ═══════════════════════════════════════════
+// 3.12 POSTURE DETECTION + SCORING
+// ═══════════════════════════════════════════
+function detectPosture(poseLandmarks) {
+  if(!poseLandmarks || testState !== 'running') return;
+  const L = i => poseLandmarks[i];
+  const ls=L(11), rs=L(12), lh=L(23), rh=L(24), nose=L(0);
+  if(!ls||!rs||!lh||!rh) return;
+  if([ls,rs,lh,rh].some(p=>(p.visibility??1)<0.35)) return;
+  const shoulderMidX=(ls.x+rs.x)/2, shoulderMidY=(ls.y+rs.y)/2;
+  const hipMidX=(lh.x+rh.x)/2, hipMidY=(lh.y+rh.y)/2;
+  const bodyH=hipMidY-shoulderMidY;
+  if(bodyH<0.06) return;
+  const lateralLean=Math.abs(shoulderMidX-hipMidX)/bodyH;
+  const shoulderTilt=Math.abs(ls.y-rs.y)/bodyH;
+  const headDrop=nose ? Math.max(0,(shoulderMidY-nose.y)/bodyH) : 0.25;
+  postureBuffer.push({t:Date.now(), lateralLean, shoulderTilt, headDrop});
+}
+
+function scorePosture() {
+  if(postureBuffer.length < 5) return {score:0, lateralLean:0, shoulderTilt:0, headDrop:0, n:0};
+  const n = postureBuffer.length;
+  const trim = Math.max(1, Math.floor(n*0.1));
+  const lateral = [...postureBuffer].sort((a,b)=>a.lateralLean-b.lateralLean)
+    .slice(trim, n-trim).reduce((a,s)=>a+s.lateralLean,0)/Math.max(1,n-trim*2);
+  const tilt = postureBuffer.reduce((a,s)=>a+s.shoulderTilt,0)/n;
+  const head = postureBuffer.reduce((a,s)=>a+s.headDrop,0)/n;
+  // Combined deviation metric (0=perfect, higher=worse)
+  const dev = lateral*0.5 + tilt*0.3 + Math.max(0, 0.3-head)*0.2;
+  const score = dev<0.04?0 : dev<0.10?1 : dev<0.18?2 : dev<0.28?3 : 4;
+  return {score, lateralLean:lateral, shoulderTilt:tilt, headDrop:head, n};
+}
+
+function showPostureResults() {
+  const {score, lateralLean, shoulderTilt, headDrop, n} = scorePosture();
+  const color = UPDRS_COLORS[score];
+  const dur = (TEST_DURATIONS.posture||15000)/1000;
+  const confidence = n>=200?'HIGH':n>=80?'MEDIUM':'LOW';
+  const FC=['#00ffcc','#88ff44','#ffff00','#ff8800','#ff2244'];
+  const el = s => document.getElementById(s);
+  el('resultsTitleH2').textContent = 'UPDRS 3.12 — POSTURE';
+  el('updrsScore').textContent = score;
+  el('updrsScore').style.color = color;
+  el('updrsScore').style.textShadow = `0 0 50px ${color}`;
+  el('updrsLabel').textContent = `POSTURE — ${UPDRS_LABELS[score]}`;
+  el('updrsDesc').textContent  = UPDRS_DESC[score];
+  el('resTaps').textContent    = n;
+  el('lblTaps').textContent    = `FRAMES / ${dur}s`;
+  el('resFreq').textContent    = `${(lateralLean*100).toFixed(1)}`;
+  el('resArrests').textContent = `${(shoulderTilt*100).toFixed(1)}%`;
+  el('resITI').textContent     = `${(headDrop*100).toFixed(1)}%`;
+  el('resMaxAmp').textContent  = `${((lateralLean+shoulderTilt)*50).toFixed(0)}`;
+  el('resFatig').textContent   = `${dur}s`;
+  // Posture bar chart: lateral lean over time
+  const chartEl = el('ampChart'); chartEl.innerHTML='';
+  const show = Math.min(postureBuffer.length, 80);
+  const recent = postureBuffer.slice(-show);
+  if(recent.length>1){
+    const maxL=Math.max(...recent.map(s=>s.lateralLean),0.01);
+    recent.forEach(s=>{
+      const pct=(s.lateralLean/maxL)*100;
+      const c=s.lateralLean<0.06?'#00ffcc':s.lateralLean<0.12?'#88ff44':s.lateralLean<0.20?'#ffff00':s.lateralLean<0.30?'#ff8800':'#ff2244';
+      const b=document.createElement('div'); b.className='amp-bar';
+      b.style.cssText=`height:${pct}%;background:${c};box-shadow:0 0 4px ${c};`;
+      chartEl.appendChild(b);
+    });
+  }
+  // Factor bars
+  const lScore=lateralLean<0.04?0:lateralLean<0.10?1:lateralLean<0.18?2:lateralLean<0.28?3:4;
+  const tScore=shoulderTilt<0.03?0:shoulderTilt<0.08?1:shoulderTilt<0.15?2:shoulderTilt<0.22?3:4;
+  [[  'freq',lScore],['arrest',tScore],['rhythm',0],['amp',score],['fatig',0]].forEach(([id,fs])=>{
+    const c=FC[Math.min(fs,4)];
+    el(`fb-${id}`).style.width=`${(fs/4)*100}%`; el(`fb-${id}`).style.background=c; el(`fb-${id}`).style.boxShadow=`0 0 6px ${c}`;
+    el(`fs-${id}`).textContent=`${fs}/4`; el(`fs-${id}`).style.color=c;
+  });
+  const confC={HIGH:'#00ffcc',MEDIUM:'#ffff00',LOW:'#ff8800'};
+  const ct=el('confidenceTag'); ct.textContent=`${confidence} CONFIDENCE  (n=${n})`; ct.style.color=confC[confidence]; ct.style.borderColor=confC[confidence];
+  el('fatigVal').textContent=`측면기울기 ${(lateralLean*100).toFixed(1)}%  어깨기울기 ${(shoulderTilt*100).toFixed(1)}%`;
+  el('fatigVal').style.color=color;
+  el('resultsOverlay').classList.add('visible');
+  lastResultPayload = {
+    mode:'live', score, raw_score:parseFloat((lateralLean+shoulderTilt).toFixed(4)),
+    n_taps:n, frequency:parseFloat((lateralLean*100).toFixed(1)),
+    arrests:0, iti_cv:parseFloat((shoulderTilt*100).toFixed(1)),
+    max_amplitude:parseFloat(lateralLean.toFixed(4)), fatigability:0,
+    confidence, duration_sec:dur,
+    factors:{test_type:'posture', lateral_lean:parseFloat(lateralLean.toFixed(4)), shoulder_tilt:parseFloat(shoulderTilt.toFixed(4)), head_drop:parseFloat(headDrop.toFixed(4))},
+  };
+  const saveBtn=el('saveResultBtn'), saveMsg=el('saveResultMsg');
+  saveBtn.style.display=''; saveBtn.disabled=false;
+  saveMsg.textContent=''; saveMsg.style.color='';
+  if(!currentUser) saveMsg.textContent='로그인하면 기록이 저장됩니다';
+}
+
+// ═══════════════════════════════════════════
+// 3.9 GAIT DETECTION + SCORING
+// ═══════════════════════════════════════════
+const GAIT_LIFT_THRESH = 0.04;
+const GAIT_COOLDOWN    = 280;
+
+function detectGait(poseLandmarks) {
+  if(!poseLandmarks || testState !== 'running') return;
+  const now = Date.now();
+  const W=canvas.width, H=canvas.height;
+  [{name:'left',aIdx:27},{name:'right',aIdx:28}].forEach(({name,aIdx})=>{
+    const ankle=poseLandmarks[aIdx];
+    if(!ankle||(ankle.visibility??1)<0.4) return;
+    if(gaitAnkleBase[name]<0){ gaitAnkleBase[name]=ankle.y; return; }
+    gaitAnkleBase[name]=gaitAnkleBase[name]*0.992+ankle.y*0.008;
+    const lift=gaitAnkleBase[name]-ankle.y;
+    const isUp=lift>GAIT_LIFT_THRESH;
+    if(!isUp&&prevAnkleUpGait[name]&&(now-lastGaitStepMs[name])>GAIT_COOLDOWN){
+      gaitSteps.push({t:now, foot:name, lift:Math.max(lift,GAIT_LIFT_THRESH)});
+      lastGaitStepMs[name]=now;
+      const x=(1-ankle.x)*W, y=ankle.y*H;
+      effects.push(new GroundRipple(x,y,'#fb923c'));
+      effects.push(new FloatingText(x,y-30,name==='left'?'L':'R','#fb923c',14));
+      testData.taps.push({t:now, amplitude:Math.max(lift,GAIT_LIFT_THRESH)});
+      document.getElementById('testTapCount').textContent=gaitSteps.length;
+      graphPulse=1;
+    }
+    prevAnkleUpGait[name]=isUp;
+  });
+  // Track arm swing
+  const lw=poseLandmarks[15],rw=poseLandmarks[16],ls=poseLandmarks[11],rs=poseLandmarks[12];
+  if(lw&&rw&&ls&&rs&&(lw.visibility??1)>0.3&&(rw.visibility??1)>0.3){
+    gaitArmSwings.push({t:now, leftAmp:Math.abs(lw.x-ls.x), rightAmp:Math.abs(rw.x-rs.x)});
+    if(gaitArmSwings.length>120) gaitArmSwings.shift();
+  }
+}
+
+function scoreGait(dur) {
+  const n=gaitSteps.length;
+  const cadencePM=n>0?(n/dur)*60:0;
+  const leftN=gaitSteps.filter(s=>s.foot==='left').length;
+  const rightN=gaitSteps.filter(s=>s.foot==='right').length;
+  const asymmetry=(leftN>0&&rightN>0)?Math.abs(leftN-rightN)/Math.max(leftN,rightN):1;
+  // Step timing variability
+  let stepCV=0;
+  if(n>=4){const gaps=gaitSteps.slice(1).map((s,i)=>s.t-gaitSteps[i].t);const mean=gaps.reduce((a,b)=>a+b,0)/gaps.length;const sd=Math.sqrt(gaps.map(x=>(x-mean)**2).reduce((a,b)=>a+b,0)/gaps.length);stepCV=mean>0?(sd/mean)*100:0;}
+  // Arm swing asymmetry
+  let armAsym=0;
+  if(gaitArmSwings.length>=10){const avgL=gaitArmSwings.reduce((a,s)=>a+s.leftAmp,0)/gaitArmSwings.length;const avgR=gaitArmSwings.reduce((a,s)=>a+s.rightAmp,0)/gaitArmSwings.length;armAsym=Math.abs(avgL-avgR)/Math.max(avgL,avgR,0.001);}
+  const cadenceScore=cadencePM>=90?0:cadencePM>=70?1:cadencePM>=50?2:cadencePM>=25?3:4;
+  const asymScore=asymmetry<0.15?0:asymmetry<0.30?1:asymmetry<0.50?2:asymmetry<0.70?3:4;
+  const cvScore=stepCV<20?0:stepCV<40?1:stepCV<60?2:stepCV<80?3:4;
+  const armScore=armAsym<0.20?0:armAsym<0.40?1:armAsym<0.60?2:armAsym<0.80?3:4;
+  const raw=cadenceScore*0.45+asymScore*0.25+cvScore*0.20+armScore*0.10;
+  const score=clamp(Math.round(raw));
+  const confidence=n>=20?'HIGH':n>=8?'MEDIUM':'LOW';
+  return {score,cadencePM,asymmetry,stepCV,armAsym,leftN,rightN,n,confidence,factors:{cadenceScore,asymScore,cvScore,armScore}};
+}
+
+function showGaitResults() {
+  const dur=(TEST_DURATIONS.gait||20000)/1000;
+  const {score,cadencePM,asymmetry,stepCV,armAsym,leftN,rightN,n,confidence,factors}=scoreGait(dur);
+  const color=UPDRS_COLORS[score];
+  const FC=['#00ffcc','#88ff44','#ffff00','#ff8800','#ff2244'];
+  const el=s=>document.getElementById(s);
+  el('resultsTitleH2').textContent='UPDRS 3.9 — GAIT';
+  el('updrsScore').textContent=score;
+  el('updrsScore').style.color=color;
+  el('updrsScore').style.textShadow=`0 0 50px ${color}`;
+  el('updrsLabel').textContent=`GAIT — ${UPDRS_LABELS[score]}`;
+  el('updrsDesc').textContent=UPDRS_DESC[score];
+  el('resTaps').textContent=n;
+  el('lblTaps').textContent=`STEPS / ${dur}s`;
+  el('resFreq').textContent=cadencePM.toFixed(0);
+  el('resArrests').textContent=`L:${leftN} R:${rightN}`;
+  el('resITI').textContent=n>=4?`${stepCV.toFixed(0)}%`:'--';
+  el('resMaxAmp').textContent=`${(asymmetry*100).toFixed(0)}`;
+  el('resFatig').textContent=`${(armAsym*100).toFixed(0)}%`;
+  // Step timeline
+  const chartEl=el('ampChart'); chartEl.innerHTML='';
+  if(gaitSteps.length>0){
+    const maxLift=Math.max(...gaitSteps.map(s=>s.lift),0.01);
+    gaitSteps.forEach(s=>{
+      const pct=(s.lift/maxLift)*100;
+      const c=s.foot==='left'?'#fb923c':'#ffee00';
+      const b=document.createElement('div'); b.className='amp-bar';
+      b.style.cssText=`height:${pct}%;background:${c};box-shadow:0 0 4px ${c};`;
+      chartEl.appendChild(b);
+    });
+  }
+  [['freq',factors.cadenceScore],['arrest',factors.asymScore],['rhythm',factors.cvScore],['amp',factors.armScore],['fatig',score]].forEach(([id,fs])=>{
+    const c=FC[Math.min(fs,4)];
+    el(`fb-${id}`).style.width=`${(fs/4)*100}%`; el(`fb-${id}`).style.background=c; el(`fb-${id}`).style.boxShadow=`0 0 6px ${c}`;
+    el(`fs-${id}`).textContent=`${fs}/4`; el(`fs-${id}`).style.color=c;
+  });
+  const confC={HIGH:'#00ffcc',MEDIUM:'#ffff00',LOW:'#ff8800'};
+  const ct=el('confidenceTag'); ct.textContent=`${confidence} CONFIDENCE  (n=${n})`; ct.style.color=confC[confidence]; ct.style.borderColor=confC[confidence];
+  el('fatigVal').textContent=`케이던스 ${cadencePM.toFixed(0)} steps/min  좌우비대칭 ${(asymmetry*100).toFixed(0)}%`;
+  el('fatigVal').style.color=color;
+  el('resultsOverlay').classList.add('visible');
+  lastResultPayload={
+    mode:'live', score, raw_score:parseFloat((cadencePM/100).toFixed(3)),
+    n_taps:n, frequency:parseFloat(cadencePM.toFixed(1)),
+    arrests:0, iti_cv:parseFloat(stepCV.toFixed(1)),
+    max_amplitude:parseFloat(asymmetry.toFixed(4)), fatigability:parseFloat((armAsym*100).toFixed(1)),
+    confidence, duration_sec:dur,
+    factors:{test_type:'gait', cadence_pm:parseFloat(cadencePM.toFixed(1)), asymmetry:parseFloat(asymmetry.toFixed(3)), step_cv:parseFloat(stepCV.toFixed(1)), arm_asym:parseFloat(armAsym.toFixed(3))},
+  };
+  const saveBtn=el('saveResultBtn'), saveMsg=el('saveResultMsg');
+  saveBtn.style.display=''; saveBtn.disabled=false;
+  saveMsg.textContent=''; saveMsg.style.color='';
+  if(!currentUser) saveMsg.textContent='로그인하면 기록이 저장됩니다';
 }
 
 // ═══════════════════════════════════════════
@@ -2373,19 +2629,21 @@ function frame() {
   Object.values(trails).forEach(t=>t.draw(ctx));
 
   if(appMode!=='video') {
-    if(testType==='toe'||testType==='leg') {
+    if(testType==='toe'||testType==='leg'||testType==='posture'||testType==='gait') {
       if(poseResults&&poseResults.poseLandmarks){
-        if(testType==='toe') detectToeTap(poseResults.poseLandmarks);
-        else detectLegAgility(poseResults.poseLandmarks);
+        if(testType==='toe')         detectToeTap(poseResults.poseLandmarks);
+        else if(testType==='leg')    detectLegAgility(poseResults.poseLandmarks);
+        else if(testType==='posture')detectPosture(poseResults.poseLandmarks);
+        else if(testType==='gait')   detectGait(poseResults.poseLandmarks);
         drawPoseSkeleton(poseResults.poseLandmarks);
       }
     } else if(handResults&&handResults.multiHandLandmarks){
       handResults.multiHandLandmarks.forEach((lm,hi)=>{
         let active=[false,false,false,false];
-        if(testType==='hand')           { detectHandMovements(lm,hi); }
-        else if(testType==='pronation') { detectPronation(lm,hi); }
-        else if(testType==='tremor')    { detectTremor(lm,hi); }
-        else                            { active=detectTaps(lm,hi); }
+        if(testType==='hand')                                { detectHandMovements(lm,hi); }
+        else if(testType==='pronation')                      { detectPronation(lm,hi); }
+        else if(testType==='tremor'||testType==='actiontremor') { detectTremor(lm,hi); }
+        else                                                 { active=detectTaps(lm,hi); }
         drawHand(lm,active);
       });
     }
@@ -2420,7 +2678,7 @@ try {
   camera = new Camera(video,{
     onFrame: async()=>{
       if(appMode!=='video'){
-        if((testType==='toe'||testType==='leg')&&poseModelLoaded&&poseModel){
+        if((testType==='toe'||testType==='leg'||testType==='posture'||testType==='gait')&&poseModelLoaded&&poseModel){
           await poseModel.send({image:video});
         } else {
           await hands.send({image:video});
