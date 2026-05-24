@@ -2861,7 +2861,7 @@ function drawFaceMesh(lm) {
     if(!faceEdgeCache){
       // O(468²) one-time build — cached forever until test resets
       faceEdgeCache=[];
-      const THRESH=0.052; // ~5% of face width in normalized coords → ~5-8 neighbors/point
+      const THRESH=0.085; // ~8.5% → ~15-20 neighbors/point, ~3000+ edges (full tesselation density)
       for(let i=0;i<468;i++){
         for(let j=i+1;j<468;j++){
           const dx=lm[i].x-lm[j].x, dy=lm[i].y-lm[j].y;
@@ -2870,7 +2870,7 @@ function drawFaceMesh(lm) {
       }
     }
     // Draw mesh lines
-    ctx.strokeStyle='rgba(232,121,249,0.18)'; ctx.lineWidth=0.8; ctx.shadowBlur=0;
+    ctx.strokeStyle='rgba(232,121,249,0.22)'; ctx.lineWidth=0.7; ctx.shadowBlur=0;
     ctx.beginPath();
     faceEdgeCache.forEach(([a,b])=>{ ctx.moveTo(lx(a),ly(a)); ctx.lineTo(lx(b),ly(b)); });
     ctx.stroke();
