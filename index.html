@@ -1198,6 +1198,7 @@ const lastGaitStepMs  = {left:0,     right:0};
 // 3.2 Facial Expression state
 let faceMeshModel = null, faceMeshResults = null;
 let faceMeshModelLoaded = false, faceMeshModelLoading = false;
+let faceMeshTess = null; // FACEMESH_TESSELATION captured after load
 const faceBlinkBuffer = [];
 const faceExprBuffer  = [];
 let faceLastEAR = {left:1, right:1};
@@ -2696,6 +2697,8 @@ function loadFaceMeshModel() {
       faceMeshModel=new FaceMesh({locateFile:f=>`https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}`});
       faceMeshModel.setOptions({maxNumFaces:1,refineLandmarks:true,minDetectionConfidence:0.7,minTrackingConfidence:0.5});
       faceMeshModel.onResults(r=>{ faceMeshResults=r; });
+      // Capture dense tesselation constant exposed by the CDN bundle
+      if(typeof FACEMESH_TESSELATION!=='undefined') faceMeshTess=[...FACEMESH_TESSELATION];
       faceMeshModelLoaded=true;
     }catch(e){ console.error('FaceMesh init:',e); }
   };
@@ -2819,64 +2822,84 @@ function showFaceResults() {
   if(!currentUser) saveMsg.textContent='로그인하면 기록이 저장됩니다';
 }
 
-// Face Mesh landmark sets for drawing
-const FACE_OVAL=[10,338,297,332,284,251,389,356,454,323,361,288,397,365,379,378,400,377,152,148,176,149,150,136,172,58,132,93,234,127,162,21,54,103,67,109];
-const LEFT_EYE_RING =[33,160,158,133,153,144];
-const RIGHT_EYE_RING=[362,385,387,263,380,373];
-const LIPS_OUTER=[61,146,91,181,84,17,314,405,321,375,291,409,270,269,267,0,37,39,40,185];
-const LEFT_BROW =[70,63,105,66,107];
-const RIGHT_BROW=[336,296,334,293,300];
+// Face Mesh connection edge pairs (MediaPipe Face Mesh standard)
+const FM_OVAL =[[10,338],[338,297],[297,332],[332,284],[284,251],[251,389],[389,356],[356,454],[454,323],[323,361],[361,288],[288,397],[397,365],[365,379],[379,378],[378,400],[400,377],[377,152],[152,148],[148,176],[176,149],[149,150],[150,136],[136,172],[172,58],[58,132],[132,93],[93,234],[234,127],[127,162],[162,21],[21,54],[54,103],[103,67],[67,109],[109,10]];
+const FM_L_EYE=[[33,7],[7,163],[163,144],[144,145],[145,153],[153,154],[154,155],[155,133],[133,173],[173,157],[157,158],[158,159],[159,160],[160,161],[161,246],[246,33]];
+const FM_R_EYE=[[263,249],[249,390],[390,373],[373,374],[374,380],[380,381],[381,382],[382,362],[362,398],[398,384],[384,385],[385,386],[386,387],[387,388],[388,466],[466,263]];
+const FM_L_BROW=[[46,53],[53,52],[52,65],[65,55],[55,70],[70,63],[63,105],[105,66],[66,107]];
+const FM_R_BROW=[[276,283],[283,282],[282,295],[295,285],[285,300],[300,293],[293,334],[334,296],[296,336]];
+const FM_LIPS=[[61,146],[146,91],[91,181],[181,84],[84,17],[17,314],[314,405],[405,321],[321,375],[375,291],[291,409],[409,270],[270,269],[269,267],[267,0],[0,37],[37,39],[39,40],[40,185],[185,61],[61,78],[78,95],[95,88],[88,178],[178,87],[87,14],[14,317],[317,402],[402,318],[318,324],[324,308],[308,415],[415,310],[310,311],[311,312],[312,13],[13,82],[82,81],[81,80],[80,191],[191,78]];
+const FM_NOSE=[[168,6],[6,197],[197,195],[195,5],[5,4],[4,1],[1,19],[19,94],[94,2],[2,164],[164,0],[0,11],[11,12],[12,13]];
 
 function drawFaceMesh(lm) {
   if(!lm) return;
   const W=canvas.width, H=canvas.height;
   const lx=i=>(1-lm[i].x)*W, ly=i=>lm[i].y*H;
   const earAvg=(faceLastEAR.left+faceLastEAR.right)/2;
-  // Eye color: green(open)→red(closed)
   const t=Math.max(0,Math.min(1,1-(earAvg-0.15)/(0.35-0.15)));
-  const eyeColor=`rgba(${Math.round(80+175*t)},${Math.round(220*(1-t))},${Math.round(200+55*t)},0.9)`;
+  const eyeColor=`rgba(${Math.round(80+175*t)},${Math.round(220*(1-t))},${Math.round(200+55*t)},0.95)`;
 
   ctx.save();
 
-  // Face oval (subtle mesh)
-  ctx.strokeStyle='rgba(232,121,249,0.12)'; ctx.lineWidth=1; ctx.shadowBlur=0;
-  ctx.beginPath();
-  FACE_OVAL.forEach((i,n)=>n===0?ctx.moveTo(lx(i),ly(i)):ctx.lineTo(lx(i),ly(i)));
-  ctx.closePath(); ctx.stroke();
-
-  // Eyebrows
-  ctx.strokeStyle='rgba(232,121,249,0.45)'; ctx.lineWidth=1.8; ctx.shadowBlur=6; ctx.shadowColor='#e879f9';
-  [LEFT_BROW,RIGHT_BROW].forEach(brow=>{
+  // ① Dense tesselation — batch draw for performance
+  if(faceMeshTess&&faceMeshTess.length){
+    ctx.strokeStyle='rgba(232,121,249,0.055)'; ctx.lineWidth=0.6; ctx.shadowBlur=0;
     ctx.beginPath();
-    brow.forEach((i,n)=>n===0?ctx.moveTo(lx(i),ly(i)):ctx.lineTo(lx(i),ly(i)));
+    faceMeshTess.forEach(([a,b])=>{ ctx.moveTo(lx(a),ly(a)); ctx.lineTo(lx(b),ly(b)); });
+    ctx.stroke();
+  }
+
+  // ② Face oval
+  ctx.strokeStyle='rgba(232,121,249,0.28)'; ctx.lineWidth=1.3; ctx.shadowBlur=5; ctx.shadowColor='#e879f9';
+  ctx.beginPath();
+  FM_OVAL.forEach(([a,b])=>{ ctx.moveTo(lx(a),ly(a)); ctx.lineTo(lx(b),ly(b)); });
+  ctx.stroke();
+
+  // ③ Eyebrows
+  ctx.strokeStyle='rgba(232,121,249,0.65)'; ctx.lineWidth=2.2; ctx.shadowBlur=9; ctx.shadowColor='#e879f9';
+  [FM_L_BROW,FM_R_BROW].forEach(brow=>{
+    ctx.beginPath();
+    brow.forEach(([a,b])=>{ ctx.moveTo(lx(a),ly(a)); ctx.lineTo(lx(b),ly(b)); });
     ctx.stroke();
   });
 
-  // Eyes (colored by EAR)
-  ctx.strokeStyle=eyeColor; ctx.lineWidth=2.2; ctx.shadowBlur=16; ctx.shadowColor=eyeColor;
-  [LEFT_EYE_RING,RIGHT_EYE_RING].forEach(ring=>{
+  // ④ Eyes — full 16-edge contour, EAR-colored
+  ctx.strokeStyle=eyeColor; ctx.lineWidth=2.5; ctx.shadowBlur=18; ctx.shadowColor=eyeColor;
+  [FM_L_EYE,FM_R_EYE].forEach(eye=>{
     ctx.beginPath();
-    ring.forEach((i,n)=>n===0?ctx.moveTo(lx(i),ly(i)):ctx.lineTo(lx(i),ly(i)));
+    eye.forEach(([a,b])=>{ ctx.moveTo(lx(a),ly(a)); ctx.lineTo(lx(b),ly(b)); });
+    ctx.stroke();
+  });
+
+  // ⑤ Iris — refined landmarks 468(L center), 473(R center) when refineLandmarks=true
+  [468,473].forEach(ci=>{
+    if(!lm[ci]) return;
+    ctx.fillStyle=eyeColor; ctx.shadowBlur=24; ctx.shadowColor=eyeColor;
+    ctx.beginPath(); ctx.arc(lx(ci),ly(ci),4.5,0,Math.PI*2); ctx.fill();
+    // Iris ring points 469-472 (L), 474-477 (R)
+    ctx.strokeStyle=`rgba(${Math.round(80+175*t)},${Math.round(220*(1-t))},${Math.round(200+55*t)},0.5)`;
+    ctx.lineWidth=1.5; ctx.shadowBlur=6;
+    ctx.beginPath();
+    for(let k=ci+1;k<=ci+4;k++) if(lm[k]) { ctx.moveTo(lx(k),ly(k)); ctx.lineTo(lx(k+1<=ci+4?k+1:ci+1),ly(k+1<=ci+4?k+1:ci+1)); }
     ctx.closePath(); ctx.stroke();
   });
 
-  // Iris glow dots at eye center
-  [[33,133],[362,263]].forEach(([a,b])=>{
-    const cx=(lx(a)+lx(b))/2, cy=(ly(a)+ly(b))/2;
-    ctx.fillStyle=eyeColor; ctx.shadowBlur=20; ctx.shadowColor=eyeColor;
-    ctx.beginPath(); ctx.arc(cx,cy,3.5,0,Math.PI*2); ctx.fill();
-  });
+  // ⑥ Nose
+  ctx.strokeStyle='rgba(232,121,249,0.32)'; ctx.lineWidth=1.2; ctx.shadowBlur=3; ctx.shadowColor='#e879f9';
+  ctx.beginPath();
+  FM_NOSE.forEach(([a,b])=>{ ctx.moveTo(lx(a),ly(a)); ctx.lineTo(lx(b),ly(b)); });
+  ctx.stroke();
 
-  // Lips: color by mouth openness
+  // ⑦ Lips — color by mouth openness
   const mOpen=faceD(lm,13,14)/(faceD(lm,10,152)+1e-4);
   const lt=Math.min(1,mOpen/0.06);
-  const lipC=`rgba(${Math.round(200+55*lt)},${Math.round(120*(1-lt*0.6))},${Math.round(230*(1-lt*0.4))},0.8)`;
-  ctx.strokeStyle=lipC; ctx.lineWidth=1.8; ctx.shadowColor=lipC; ctx.shadowBlur=10;
+  const lipC=`rgba(${Math.round(200+55*lt)},${Math.round(100*(1-lt*0.6))},${Math.round(230*(1-lt*0.4))},0.9)`;
+  ctx.strokeStyle=lipC; ctx.lineWidth=2; ctx.shadowColor=lipC; ctx.shadowBlur=12;
   ctx.beginPath();
-  LIPS_OUTER.forEach((i,n)=>n===0?ctx.moveTo(lx(i),ly(i)):ctx.lineTo(lx(i),ly(i)));
-  ctx.closePath(); ctx.stroke();
+  FM_LIPS.forEach(([a,b])=>{ ctx.moveTo(lx(a),ly(a)); ctx.lineTo(lx(b),ly(b)); });
+  ctx.stroke();
 
-  // HUD: blink count + rate (top-right)
+  // ⑧ HUD
   if(testState==='running'){
     const blinks=faceBlinkBuffer.length;
     const durSec=Math.max(1,(Date.now()-testData.startTime)/1000);
@@ -2885,11 +2908,8 @@ function drawFaceMesh(lm) {
     ctx.shadowBlur=10; ctx.shadowColor=bpmC;
     ctx.font='bold 14px monospace'; ctx.fillStyle=bpmC; ctx.textAlign='right';
     ctx.fillText(`BLINK ${blinks}×  (${bpm.toFixed(1)}/min)`, W-18, 50);
-    const earC=earAvg<0.2?'#ff4444':earAvg<0.28?'#ffaa00':'#00ffcc';
-    ctx.font='11px monospace'; ctx.fillStyle=`rgba(255,255,255,0.5)`;
-    ctx.shadowBlur=0;
+    ctx.font='11px monospace'; ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.shadowBlur=0;
     ctx.fillText(`EAR ${earAvg.toFixed(3)}`, W-18, 67);
-    // Blink rate severity label
     const sev=['NORMAL','MILD↓','MODERATE↓','SEVERE↓','FIXED'];
     const si=bpm>=12?0:bpm>=8?1:bpm>=5?2:bpm>=2?3:4;
     ctx.font='bold 11px monospace'; ctx.fillStyle=bpmC; ctx.shadowBlur=8; ctx.shadowColor=bpmC;
