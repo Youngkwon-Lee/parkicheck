@@ -1025,7 +1025,7 @@ function generateReport() {
   <h2>Recent Results (last 20)</h2>
   <table><thead><tr><th>Date</th><th>Test</th><th>Score</th><th>Severity</th><th>Frequency</th></tr></thead><tbody>${resultRows}</tbody></table>
   <div class="footer">ParkiCheck is a home-based UPDRS motor assessment tool for personal symptom tracking. This report does not constitute medical diagnosis — consult your neurologist for clinical evaluation.</div>
-  <script>window.onload=()=>setTimeout(()=>window.print(),400)</script></body></html>`;
+  <script>window.onload=()=>setTimeout(()=>window.print(),400)<\/script></body></html>`;
 
   const w=window.open('','_blank','width=820,height=640');
   if(w){w.document.write(html);w.document.close();}
