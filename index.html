@@ -2884,11 +2884,29 @@ function drawFaceMesh(lm) {
     ctx.fill();
   }
 
-  // ② Face silhouette — actual FM_OVAL landmark path (tracks real jaw/cheek/forehead shape)
-  ctx.strokeStyle='rgba(232,121,249,0.65)'; ctx.lineWidth=2.2; ctx.shadowBlur=12; ctx.shadowColor='#e879f9';
-  ctx.beginPath();
-  FM_OVAL_PTS.forEach((i,n)=>n===0?ctx.moveTo(lx(i),ly(i)):ctx.lineTo(lx(i),ly(i)));
-  ctx.closePath(); ctx.stroke();
+  // ② Face silhouette — convex hull of ALL 468 landmarks (actual outermost boundary)
+  {
+    const pts=[];
+    for(let i=0;i<468;i++) pts.push({x:lx(i),y:ly(i)});
+    pts.sort((a,b)=>a.x!==b.x?a.x-b.x:a.y-b.y);
+    const cross=(O,A,B)=>(A.x-O.x)*(B.y-O.y)-(A.y-O.y)*(B.x-O.x);
+    const hull=[];
+    for(const p of pts){
+      while(hull.length>=2&&cross(hull[hull.length-2],hull[hull.length-1],p)<=0)hull.pop();
+      hull.push(p);
+    }
+    const lower=hull.length+1;
+    for(let i=pts.length-1;i>=0;i--){
+      const p=pts[i];
+      while(hull.length>=lower&&cross(hull[hull.length-2],hull[hull.length-1],p)<=0)hull.pop();
+      hull.push(p);
+    }
+    hull.pop();
+    ctx.strokeStyle='rgba(232,121,249,0.65)'; ctx.lineWidth=2.2; ctx.shadowBlur=12; ctx.shadowColor='#e879f9';
+    ctx.beginPath();
+    hull.forEach((p,n)=>n===0?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y));
+    ctx.closePath(); ctx.stroke();
+  }
 
   // ③ Eyebrows
   ctx.strokeStyle='rgba(232,121,249,0.65)'; ctx.lineWidth=2.2; ctx.shadowBlur=9; ctx.shadowColor='#e879f9';
