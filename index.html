@@ -7,7 +7,21 @@
   <meta http-equiv="Pragma" content="no-cache">
   <title>ParkiCheck — UPDRS Motor Assessment</title>
 
-  <script defer src="/_vercel/insights/script.js"></script>
+  <script>
+    window.va = window.va || function(...params) {
+      (window.vaq = window.vaq || []).push(params);
+    };
+    (function() {
+      const host = window.location.hostname;
+      const isLocalHost = host === 'localhost' || host === '127.0.0.1' || host === '::1';
+      const isFile = window.location.protocol === 'file:';
+      if (isLocalHost || isFile) return;
+      const script = document.createElement('script');
+      script.defer = true;
+      script.src = '/_vercel/insights/script.js';
+      document.head.appendChild(script);
+    })();
+  </script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
@@ -660,10 +674,10 @@
 </div>
 <script>
 // ═══════════════════════════════════════════
-// SUPABASE — replace anon key before deploy
+// SUPABASE — moai_web project
 // ═══════════════════════════════════════════
-const SUPA_URL  = 'https://bverkizzwhbiggpzsvlo.supabase.co';
-const SUPA_KEY  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ2ZXJraXp6d2hiaWdncHpzdmxvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUyODcyMjcsImV4cCI6MjA5MDg2MzIyN30.bi-YqpS1tUq52iGYYCMRcdcUAtKGiesxIizvUjSBUHE';
+const SUPA_URL  = 'https://iwtyzcwiovuvmsodtusx.supabase.co';
+const SUPA_KEY  = 'sb_publishable_LUafXdplbxCSGwywWMDpEw_C5BN5u7V';
 let supa;
 try {
   supa = (window.supabase || window.Supabase).createClient(SUPA_URL, SUPA_KEY);
@@ -676,6 +690,77 @@ try {
 let currentUser = null;
 let lastResultPayload = null;
 let cameraStarted = false;
+
+let _personId = null; // cached persons.id for current auth user
+let _orgId    = null; // cached organization_id (personal solo org) for current auth user
+
+// Idempotent — creates persons + personal org if needed.
+async function bootstrapPersonalContext() {
+  if (_personId && _orgId) return { personId: _personId, orgId: _orgId };
+  if (!supa || !currentUser) return { personId: null, orgId: null };
+  try {
+    const { data: rpc } = await supa.rpc('bootstrap_consumer_app_user', {
+      p_first_name: (currentUser.email || '').split('@')[0] || null,
+      p_email:      currentUser.email || null,
+      p_app_source: 'finger_tap_fx',
+    });
+    if (rpc && !rpc.error) {
+      _personId = rpc.person_id;
+      _orgId    = rpc.org_id;
+      return { personId: _personId, orgId: _orgId };
+    }
+  } catch(e) { /* bootstrap RPC not yet deployed — skip */ }
+  return { personId: null, orgId: null };
+}
+
+function sanitizeAnalyticsProperties(properties = {}) {
+  const clean = {};
+  Object.entries(properties).forEach(([key, value]) => {
+    if (value === null) {
+      clean[key] = null;
+      return;
+    }
+    if (typeof value === 'number') {
+      if (Number.isFinite(value)) clean[key] = value;
+      return;
+    }
+    if (typeof value === 'string' || typeof value === 'boolean') {
+      clean[key] = value;
+    }
+  });
+  return Object.keys(clean).length ? clean : undefined;
+}
+
+function trackAnalytics(name, properties, options) {
+  if (typeof window === 'undefined' || typeof window.va !== 'function') return;
+  const payload = { name };
+  const data = sanitizeAnalyticsProperties(properties);
+  if (data) payload.data = data;
+  if (options) payload.options = options;
+  window.va('event', payload);
+}
+
+function buildAssessmentAnalytics(payload = {}) {
+  const factors = payload.factors || {};
+  const resolvedType = factors.test_type || testType || 'unknown';
+  const meta = typeof ASSESS_META !== 'undefined' ? ASSESS_META[resolvedType] : null;
+  return {
+    assessment_mode: payload.mode || (appMode === 'video' ? 'video' : 'live'),
+    test_type: resolvedType,
+    test_label: meta?.name || resolvedType,
+    score: payload.score ?? null,
+    taps: payload.n_taps ?? null,
+    frequency: payload.frequency ?? null,
+    fatigability: payload.fatigability ?? null,
+    confidence: payload.confidence ?? null,
+    signed_in: !!currentUser,
+  };
+}
+
+function setLastResultPayload(payload) {
+  lastResultPayload = payload;
+  trackAnalytics('assessment_completed', buildAssessmentAnalytics(payload));
+}
 
 supa.auth.onAuthStateChange((_e, session) => {
   currentUser = session?.user ?? null;
@@ -741,6 +826,7 @@ async function doLogin() {
   const { error } = await supa.auth.signInWithPassword({ email, password: pw });
   document.getElementById('loginBtn').textContent = 'LOGIN';
   if (error) { errEl.textContent = error.message; return; }
+  trackAnalytics('login_completed', { auth_method: 'email_password' });
   showAssessSelector();
 }
 
@@ -755,6 +841,10 @@ async function doSignup() {
   const { data, error } = await supa.auth.signUp({ email, password: pw });
   document.getElementById('signupBtn').textContent = 'CREATE ACCOUNT';
   if (error) { errEl.textContent = error.message; return; }
+  trackAnalytics('signup_completed', {
+    auth_method: 'email_password',
+    verification_required: !data.session,
+  });
 
   // autoconfirm ON → session returned immediately
   if (data.session) { showAssessSelector(); return; }
@@ -774,6 +864,7 @@ async function doSignup() {
 
 async function doSignOut() {
   await supa.auth.signOut();
+  currentUser = null; _personId = null; _orgId = null;
   document.getElementById('profileMenu').classList.remove('open');
   cameraStarted = false;
   try { camera.stop(); } catch(e) {}
@@ -784,6 +875,7 @@ async function doSignOut() {
 }
 
 function continueAsGuest() {
+  trackAnalytics('guest_mode_entered', { signed_in: false });
   showAssessSelector();
 }
 
@@ -793,11 +885,49 @@ async function saveResultToDb(payload) {
   const btnEl = document.getElementById('saveResultBtn');
   btnEl.disabled = true;
   msgEl.textContent = '저장 중...';
-  const { error } = await supa.from('updrs_results').insert({ ...payload, user_id: currentUser.id });
+
+  const { personId, orgId } = await bootstrapPersonalContext();
+  let error;
+
+  if (personId && orgId) {
+    // Write to physio_app core observations table
+    ({ error } = await supa.from('observations').insert({
+      fhir_id:            crypto.randomUUID(),
+      subject_person_id:  personId,
+      organization_id:    orgId,
+      created_by:         personId,
+      status:             'final',
+      source_type:        'device',
+      code:               'UPDRS_3_4',
+      code_system:        'http://www.nih.gov/updrs',
+      code_display:       'UPDRS Part III Item 3.4 – Finger Tapping',
+      category:           ['motor-assessment', 'neurological'],
+      value_type:         'integer',
+      value_integer:      payload.score,
+      measurement_context: {
+        frequency:    payload.frequency,
+        amplitude:    payload.max_amplitude,
+        arrests:      payload.arrests,
+        iti_cv:       payload.iti_cv,
+        fatigability: payload.fatigability,
+        confidence:   payload.confidence,
+        mode:         payload.mode,
+        n_taps:       payload.n_taps,
+        duration_sec: payload.duration_sec,
+        factors:      payload.factors,
+      },
+      effective_datetime: new Date().toISOString(),
+    }));
+  } else {
+    // Fallback: legacy table (no org/person required)
+    ({ error } = await supa.from('updrs_results').insert({ ...payload, user_id: currentUser.id }));
+  }
+
   btnEl.disabled = false;
   if (error) {
     msgEl.textContent = '저장 실패: ' + error.message;
   } else {
+    trackAnalytics('assessment_saved', buildAssessmentAnalytics(payload));
     msgEl.style.color = '#00ffcc';
     msgEl.textContent = '✓ 저장되었습니다';
     btnEl.style.display = 'none';
@@ -822,13 +952,37 @@ async function showHistory() {
   switchHistTab('chart');
   if(!currentUser) return;
 
-  const { data } = await supa
-    .from('updrs_results')
-    .select('tested_at,mode,score,n_taps,frequency,fatigability,confidence,factors')
-    .order('tested_at', { ascending: true })
-    .limit(200);
+  const { personId } = await bootstrapPersonalContext();
+  let rawData;
 
-  histResults = data || [];
+  if (personId) {
+    const { data } = await supa
+      .from('observations')
+      .select('effective_datetime,value_integer,measurement_context')
+      .eq('code', 'UPDRS_3_4')
+      .eq('subject_person_id', personId)
+      .order('effective_datetime', { ascending: true })
+      .limit(200);
+    rawData = (data || []).map(r => ({
+      tested_at:   r.effective_datetime,
+      score:       r.value_integer,
+      mode:        r.measurement_context?.mode,
+      n_taps:      r.measurement_context?.n_taps,
+      frequency:   r.measurement_context?.frequency,
+      fatigability: r.measurement_context?.fatigability,
+      confidence:  r.measurement_context?.confidence,
+      factors:     r.measurement_context?.factors,
+    }));
+  } else {
+    const { data } = await supa
+      .from('updrs_results')
+      .select('tested_at,mode,score,n_taps,frequency,fatigability,confidence,factors')
+      .order('tested_at', { ascending: true })
+      .limit(200);
+    rawData = data || [];
+  }
+
+  histResults = rawData;
   histMedLogs = getMedLogs();
   setTimeout(refreshHistChart, 60);
 }
@@ -1060,7 +1214,7 @@ async function showAdmin() {
 
   const { data, error } = await supa.rpc('admin_get_stats');
   if(error){
-    document.getElementById('adminByType').innerHTML=`<div class="hist-empty" style="font-size:0.7rem">오류: ${error.message}<br><small>Supabase SQL Editor에서 admin_get_stats() 함수를 먼저 만들어주세요.</small></div>`;
+    document.getElementById('adminByType').innerHTML=`<div class="hist-empty" style="font-size:0.7rem">오류: ${error.message}<br><small>Supabase SQL Editor에서 <code>supabase/migrations/20260525130625_admin_get_stats.sql</code> 내용을 실행해주세요.</small></div>`;
     return;
   }
   renderAdminDashboard(data);
@@ -1629,7 +1783,7 @@ function showResults(durationSec = 10, title = 'UPDRS 3.4 — FINGER TAPPING') {
   el('resultsOverlay').classList.add('visible');
 
   // Prepare save payload
-  lastResultPayload = {
+  setLastResultPayload({
     mode: appMode === 'video' ? 'video' : 'live',
     score, raw_score: parseFloat(raw.toFixed(3)),
     n_taps: n, frequency: parseFloat(freq.toFixed(2)),
@@ -1638,7 +1792,7 @@ function showResults(durationSec = 10, title = 'UPDRS 3.4 — FINGER TAPPING') {
     fatigability: parseFloat(fatig.toFixed(1)),
     confidence, duration_sec: parseFloat(durationSec.toFixed(1)),
     factors: {...factors, test_type: testType},
-  };
+  });
   // Reset save UI
   const saveBtn = el('saveResultBtn');
   const saveMsg = el('saveResultMsg');
@@ -1707,13 +1861,13 @@ function showTremorResults() {
   el('fatigVal').style.color = color;
   el('resultsOverlay').classList.add('visible');
 
-  lastResultPayload = {
+  setLastResultPayload({
     mode: 'live', score, raw_score: parseFloat(normAmp.toFixed(4)),
     n_taps: n, frequency: parseFloat((tr.freq||0).toFixed(2)),
     arrests: 0, iti_cv: 0, max_amplitude: parseFloat(normAmp.toFixed(4)),
     fatigability: 0, confidence, duration_sec: dur,
     factors: {test_type: testType, tremor_freq: parseFloat((tr.freq||0).toFixed(2)), tremor_amp: parseFloat(normAmp.toFixed(4))},
-  };
+  });
   const saveBtn=el('saveResultBtn'), saveMsg=el('saveResultMsg');
   saveBtn.style.display=''; saveBtn.disabled=false;
   saveMsg.textContent=''; saveMsg.style.color='';
@@ -1927,6 +2081,13 @@ function startCountdown() {
 }
 function startTest() {
   testState='running';
+  const meta = ASSESS_META[testType] || null;
+  trackAnalytics('assessment_started', {
+    assessment_mode: 'live',
+    test_type: testType || 'unknown',
+    test_label: meta?.name || testType || 'unknown',
+    signed_in: !!currentUser,
+  });
   if(testType==='tremor'||testType==='actiontremor'){ tremorBuffer.length=0; tremorLiveFreq=0; }
   // Reset pose baselines for fresh test
   if(testType==='toe'||testType==='leg'){
@@ -1985,6 +2146,12 @@ videoEl.style.cssText='position:fixed;left:-9999px;top:-9999px;opacity:0;pointer
 document.body.appendChild(videoEl);
 
 async function analyzeVideoFile(file) {
+  trackAnalytics('assessment_started', {
+    assessment_mode: 'video',
+    test_type: 'finger',
+    test_label: 'FINGER TAPPING',
+    signed_in: !!currentUser,
+  });
   // Reset
   Object.assign(testData,{taps:[],arrests:0,startTime:0,lastTapT:0,currentMaxDist:0});
   const keys = Object.keys(prevTap).filter(k=>k.startsWith('vid-'));
@@ -2580,14 +2747,14 @@ function showPostureResults() {
   el('fatigVal').textContent=`측면기울기 ${(lateralLean*100).toFixed(1)}%  어깨기울기 ${(shoulderTilt*100).toFixed(1)}%`;
   el('fatigVal').style.color=color;
   el('resultsOverlay').classList.add('visible');
-  lastResultPayload = {
+  setLastResultPayload({
     mode:'live', score, raw_score:parseFloat((lateralLean+shoulderTilt).toFixed(4)),
     n_taps:n, frequency:parseFloat((lateralLean*100).toFixed(1)),
     arrests:0, iti_cv:parseFloat((shoulderTilt*100).toFixed(1)),
     max_amplitude:parseFloat(lateralLean.toFixed(4)), fatigability:0,
     confidence, duration_sec:dur,
     factors:{test_type:'posture', lateral_lean:parseFloat(lateralLean.toFixed(4)), shoulder_tilt:parseFloat(shoulderTilt.toFixed(4)), head_drop:parseFloat(headDrop.toFixed(4))},
-  };
+  });
   const saveBtn=el('saveResultBtn'), saveMsg=el('saveResultMsg');
   saveBtn.style.display=''; saveBtn.disabled=false;
   saveMsg.textContent=''; saveMsg.style.color='';
@@ -2695,14 +2862,14 @@ function showGaitResults() {
   el('fatigVal').textContent=`케이던스 ${cadencePM.toFixed(0)} steps/min  좌우비대칭 ${(asymmetry*100).toFixed(0)}%`;
   el('fatigVal').style.color=color;
   el('resultsOverlay').classList.add('visible');
-  lastResultPayload={
+  setLastResultPayload({
     mode:'live', score, raw_score:parseFloat((cadencePM/100).toFixed(3)),
     n_taps:n, frequency:parseFloat(cadencePM.toFixed(1)),
     arrests:0, iti_cv:parseFloat(stepCV.toFixed(1)),
     max_amplitude:parseFloat(asymmetry.toFixed(4)), fatigability:parseFloat((armAsym*100).toFixed(1)),
     confidence, duration_sec:dur,
     factors:{test_type:'gait', cadence_pm:parseFloat(cadencePM.toFixed(1)), asymmetry:parseFloat(asymmetry.toFixed(3)), step_cv:parseFloat(stepCV.toFixed(1)), arm_asym:parseFloat(armAsym.toFixed(3))},
-  };
+  });
   const saveBtn=el('saveResultBtn'), saveMsg=el('saveResultMsg');
   saveBtn.style.display=''; saveBtn.disabled=false;
   saveMsg.textContent=''; saveMsg.style.color='';
@@ -2867,14 +3034,14 @@ function showFaceResults() {
   el('fatigVal').textContent=`깜빡임 ${blinkPM.toFixed(1)}/분  스마일비대칭 ${(smileAsymmetry*100).toFixed(0)}%  진폭 ${(smileAmplitude*1000).toFixed(1)}`;
   el('fatigVal').style.color=color;
   el('resultsOverlay').classList.add('visible');
-  lastResultPayload={
+  setLastResultPayload({
     mode:'live', score, raw_score:parseFloat(blinkPM.toFixed(2)),
     n_taps:blinkCount, frequency:parseFloat(blinkPM.toFixed(1)),
     arrests:exprScore, iti_cv:parseFloat((exprVar*1000).toFixed(2)),
     max_amplitude:parseFloat((exprVar).toFixed(5)), fatigability:0,
     confidence, duration_sec:durSec,
     factors:{test_type:'face',blink_per_min:parseFloat(blinkPM.toFixed(1)),blink_count:blinkCount,expr_variability:parseFloat((exprVar*1000).toFixed(2)),blink_score:blinkScore,expr_score:exprScore},
-  };
+  });
   const saveBtn=el('saveResultBtn'), saveMsg=el('saveResultMsg');
   saveBtn.style.display=''; saveBtn.disabled=false;
   saveMsg.textContent=''; saveMsg.style.color='';
