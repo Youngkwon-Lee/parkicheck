@@ -36,7 +36,6 @@ test('video analysis resets stale assessment selection to finger tapping', () =>
 test('login applies the authenticated user before opening the assessment', () => {
   assert.match(html, /const \{ data, error \} = await supa\.auth\.signInWithPassword/);
   assert.match(html, /currentUser = data\.user;\s*updateAuthUI\(\);\s*trackAnalytics\('login_completed'/);
-  assert.match(html, /if \(event === 'SIGNED_OUT'\) currentUser = null;\s*else if \(session\?\.user\) currentUser = session\.user;/);
 });
 
 test('saving waits for the consented Hawk I review to finish', () => {

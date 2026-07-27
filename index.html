@@ -860,9 +860,8 @@ function normalizedHawkIResult(result) {
   };
 }
 
-supa.auth.onAuthStateChange((event, session) => {
-  if (event === 'SIGNED_OUT') currentUser = null;
-  else if (session?.user) currentUser = session.user;
+supa.auth.onAuthStateChange((_e, session) => {
+  currentUser = session?.user ?? null;
   updateAuthUI();
 });
 
