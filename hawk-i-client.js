@@ -54,6 +54,12 @@
       const url = new URL(candidate);
       const isProduction = url.hostname === 'hawkeye-labeling-tool.vercel.app';
       const isTeamPreview = /^hawkeye-labeling-tool-[a-z0-9-]+-22s-projects-de7c705f\.vercel\.app$/.test(url.hostname);
+      const normalizedPath = url.pathname.replace(/\/+$/, '');
+      const isHomeDesktopFunnel = url.hostname === 'desktop-t43sn5m-1.tailde3b80.ts.net';
+      const isHawkIPath = normalizedPath === '/hawkeye-preview' || normalizedPath === '/hawkeye-api';
+      if (url.protocol === 'https:' && isHomeDesktopFunnel && isHawkIPath) {
+        return `${url.origin}${normalizedPath}`;
+      }
       if (url.protocol !== 'https:' || (!isProduction && !isTeamPreview)) return null;
       return url.origin;
     } catch (_error) {

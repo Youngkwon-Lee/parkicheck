@@ -157,6 +157,11 @@ test('preview base URL accepts only the Hawk I team deployment', () => {
   );
   assert.equal(resolveAllowedPreviewBaseUrl('https://attacker.vercel.app'), null);
   assert.equal(resolveAllowedPreviewBaseUrl('http://hawkeye-labeling-tool.vercel.app'), null);
+  assert.equal(
+    resolveAllowedPreviewBaseUrl('https://desktop-t43sn5m-1.tailde3b80.ts.net/hawkeye-preview/'),
+    'https://desktop-t43sn5m-1.tailde3b80.ts.net/hawkeye-preview',
+  );
+  assert.equal(resolveAllowedPreviewBaseUrl('https://desktop-t43sn5m-1.tailde3b80.ts.net/other'), null);
 });
 
 test('direct upload base accepts only the bounded Hawk I Funnel paths', () => {

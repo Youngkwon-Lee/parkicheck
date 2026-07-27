@@ -28,6 +28,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
   <script src="./hawk-i-client.js"></script>
   <script src="./medication-comparison.js"></script>
+  <script src="./assessment-session.js"></script>
 
   <style>
     :root {
@@ -987,37 +988,26 @@ async function saveResultToDb(payload) {
   let error;
 
   if (personId && orgId) {
-    // Write to physio_app core observations table
-    ({ error } = await supa.from('observations').insert({
-      fhir_id:            crypto.randomUUID(),
-      subject_person_id:  personId,
-      organization_id:    orgId,
-      created_by:         personId,
-      status:             'final',
-      source_type:        'device',
-      code:               'UPDRS_3_4',
-      code_system:        'http://www.nih.gov/updrs',
-      code_display:       'UPDRS Part III Item 3.4 – Finger Tapping',
-      category:           ['motor-assessment', 'neurological'],
-      value_type:         'integer',
-      value_integer:      payload.score,
-      measurement_context: {
-        assessment_session_id: payload.assessment_session_id,
-        medication_context: payload.medication_context,
-        hawk_i: payload.hawk_i,
-        frequency:    payload.frequency,
-        amplitude:    payload.max_amplitude,
-        arrests:      payload.arrests,
-        iti_cv:       payload.iti_cv,
-        fatigability: payload.fatigability,
-        confidence:   payload.confidence,
-        mode:         payload.mode,
-        n_taps:       payload.n_taps,
-        duration_sec: payload.duration_sec,
-        factors:      payload.factors,
-      },
-      effective_datetime: new Date().toISOString(),
-    }));
+    if (!window.ParkiAssessmentSession) {
+      error = new Error('평가 세션 연결 모듈을 불러오지 못했습니다.');
+    } else {
+      const identity = { personId, organizationId: orgId, createdBy: personId };
+      const sessionRow = window.ParkiAssessmentSession.buildActivitySessionRow(payload, identity);
+      ({ error } = await supa
+        .from('activity_sessions')
+        .upsert(sessionRow, { onConflict: 'id' }));
+
+      if (!error) {
+        const observationRow = window.ParkiAssessmentSession.buildObservationRow(
+          payload,
+          identity,
+          sessionRow.id,
+        );
+        ({ error } = await supa
+          .from('observations')
+          .upsert(observationRow, { onConflict: 'fhir_id' }));
+      }
+    }
   } else {
     // Fallback: legacy table (no org/person required)
     ({ error } = await supa.from('updrs_results').insert({

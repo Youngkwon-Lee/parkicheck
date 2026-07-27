@@ -6,7 +6,10 @@ const path = require('node:path');
 const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
 
 test('ParkiCheck persists one assessment session across local and Hawk I results', () => {
-  assert.match(html, /assessment_session_id:\s*payload\.assessment_session_id/);
+  assert.match(html, /assessment-session\.js/);
+  assert.match(html, /from\('activity_sessions'\)[\s\S]*upsert\(sessionRow, \{ onConflict: 'id' \}\)/);
+  assert.match(html, /from\('observations'\)[\s\S]*upsert\(observationRow, \{ onConflict: 'fhir_id' \}\)/);
+  assert.match(html, /buildObservationRow\([\s\S]*payload,[\s\S]*identity,[\s\S]*sessionRow\.id/);
   assert.match(html, /assessmentSessionId,\s*patientId,/s);
   assert.match(html, /patientId = `research-\$\{assessmentSessionId\}`/);
   assert.match(html, /lastResultPayload\.hawk_i = normalizedHawkIResult/);
