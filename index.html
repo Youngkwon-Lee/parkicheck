@@ -26,6 +26,9 @@
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+  <script src="./hawk-i-client.js"></script>
+  <script src="./medication-comparison.js"></script>
+  <script src="./assessment-session.js"></script>
 
   <style>
     :root {
@@ -37,7 +40,7 @@
     #container { position:relative; width:100vw; height:100vh; }
 
     video { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; transform:scaleX(-1); filter:brightness(0.6) contrast(1.1); }
-    canvas { position:absolute; inset:0; width:100%; height:100%; }
+    #canvas { position:absolute; inset:0; width:100%; height:100%; }
 
     .panel { background:var(--glass); backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px); border:1px solid var(--border); border-radius:12px; padding:12px 18px; }
 
@@ -137,6 +140,27 @@
     .f-score { font-size:0.68rem; font-weight:bold; text-align:right; }
     #confidenceTag { display:inline-block; margin-bottom:12px; padding:3px 10px; border-radius:20px; font-size:0.62rem; letter-spacing:1px; border:1px solid; font-weight:bold; }
     #updrsDesc { font-size:0.75rem; color:rgba(255,255,255,0.45); line-height:1.7; margin-bottom:18px; }
+    .hawk-consent { display:grid; grid-template-columns:20px 1fr; gap:10px; margin-top:16px; padding:13px 14px; border:1px solid rgba(0,255,204,0.2); border-radius:11px; background:rgba(0,255,204,0.035); text-align:left; cursor:pointer; }
+    .hawk-consent input { width:16px; height:16px; margin-top:2px; accent-color:var(--accent); }
+    .hawk-consent strong { display:block; color:#d9fff7; font-size:0.68rem; letter-spacing:1px; margin-bottom:5px; }
+    .hawk-consent span { display:block; color:rgba(255,255,255,0.38); font-size:0.62rem; line-height:1.55; }
+    .hawk-review { position:relative; margin:0 0 16px; padding:14px; border:1px solid rgba(0,255,204,0.22); border-radius:12px; background:linear-gradient(145deg,rgba(0,255,204,0.055),rgba(28,43,70,0.16)); text-align:left; overflow:hidden; }
+    .hawk-review::before { content:''; position:absolute; inset:0 auto 0 0; width:3px; background:linear-gradient(#00ffcc,#5b8cff); }
+    .hawk-review.hidden-review { display:none; }
+    .hawk-review-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:9px; }
+    .hawk-review-brand { font-size:0.66rem; font-weight:bold; letter-spacing:2px; color:#d9fff7; }
+    .hawk-review-badge { padding:3px 8px; border:1px solid rgba(255,255,255,0.16); border-radius:20px; color:rgba(255,255,255,0.45); font-size:0.55rem; font-weight:bold; letter-spacing:1px; }
+    .hawk-review-badge[data-state="working"] { color:#7be9ff; border-color:rgba(123,233,255,0.45); animation:hawkPulse 1.35s ease-in-out infinite; }
+    .hawk-review-badge[data-state="done"] { color:#00ffcc; border-color:rgba(0,255,204,0.55); }
+    .hawk-review-badge[data-state="error"] { color:#ff8b8b; border-color:rgba(255,139,139,0.48); }
+    @keyframes hawkPulse { 50% { opacity:0.5; } }
+    .hawk-review-status { color:rgba(255,255,255,0.55); font-size:0.68rem; line-height:1.6; }
+    .hawk-review-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin:11px 0; }
+    .hawk-review-metric { padding:9px 7px; border:1px solid rgba(255,255,255,0.08); border-radius:8px; background:rgba(0,0,0,0.18); text-align:center; }
+    .hawk-review-value { color:#d9fff7; font-size:0.9rem; font-weight:bold; }
+    .hawk-review-label { margin-top:3px; color:rgba(255,255,255,0.3); font-size:0.5rem; letter-spacing:1px; }
+    .hawk-review-advisory { color:rgba(255,255,255,0.54); font-size:0.64rem; line-height:1.55; }
+    .hawk-review-boundary { margin-top:9px; color:rgba(255,255,255,0.27); font-size:0.56rem; line-height:1.55; }
 
     /* ── Start overlay ── */
     #startOverlay { position:absolute; inset:0; z-index:100; background:rgba(0,0,0,0.92); backdrop-filter:blur(12px); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:22px; transition:opacity 0.6s ease; }
@@ -190,7 +214,7 @@
     .auth-guest:hover { border-color:rgba(255,255,255,0.3); color:rgba(255,255,255,0.6); }
 
     /* ── Profile badge ── */
-    #profileBadge { position:absolute; top:20px; left:20px; z-index:20; display:flex; align-items:center; gap:8px; background:var(--glass); backdrop-filter:blur(18px); border:1px solid var(--border); border-radius:24px; padding:7px 14px; cursor:pointer; transition:opacity 0.3s; }
+    #profileBadge { position:absolute; top:20px; left:20px; z-index:107; display:flex; align-items:center; gap:8px; background:var(--glass); backdrop-filter:blur(18px); border:1px solid var(--border); border-radius:24px; padding:7px 14px; cursor:pointer; transition:opacity 0.3s; }
     #profileEmail { font-size:0.68rem; color:rgba(255,255,255,0.55); letter-spacing:1px; max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .prof-dot { width:7px; height:7px; border-radius:50%; background:var(--accent); box-shadow:0 0 6px var(--accent); flex-shrink:0; }
     #profileMenu { position:absolute; top:44px; left:0; background:rgba(6,8,18,0.97); border:1px solid var(--border); border-radius:12px; padding:6px; min-width:160px; opacity:0; pointer-events:none; transition:opacity 0.2s; }
@@ -216,7 +240,7 @@
     .assess-back:hover { color:rgba(255,255,255,0.5); }
 
     /* ── History panel ── */
-    #historyOverlay { position:absolute; inset:0; z-index:80; background:rgba(0,0,0,0.7); backdrop-filter:blur(10px); overflow-y:auto; display:flex; justify-content:center; align-items:flex-start; padding:48px 16px 40px; transition:opacity 0.4s; }
+    #historyOverlay { position:absolute; inset:0; z-index:108; background:rgba(0,0,0,0.7); backdrop-filter:blur(10px); overflow-y:auto; display:flex; justify-content:center; align-items:flex-start; padding:48px 16px 40px; transition:opacity 0.4s; }
     .history-card { background:rgba(6,8,18,0.96); border:1px solid var(--border); border-radius:20px; padding:24px; width:100%; max-width:580px; }
     .hist-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
     .hist-header h2 { font-size:0.72rem; letter-spacing:4px; color:rgba(255,255,255,0.35); margin:0; }
@@ -229,6 +253,12 @@
     .hist-filter-btn { padding:3px 9px; border:1px solid rgba(255,255,255,0.1); border-radius:10px; cursor:pointer; font-family:'Courier New',monospace; font-size:0.58rem; letter-spacing:1px; background:transparent; color:rgba(255,255,255,0.38); transition:all 0.2s; }
     .hist-filter-btn.active { border-color:var(--fc,#00ffcc); color:var(--fc,#00ffcc); background:rgba(255,255,255,0.05); }
     .med-form { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-bottom:14px; padding:10px 12px; background:rgba(96,165,250,0.06); border:1px solid rgba(96,165,250,0.18); border-radius:10px; }
+    .med-compare { margin-top:14px; padding:12px 14px; border:1px solid rgba(96,165,250,0.24); border-radius:10px; background:rgba(96,165,250,0.06); font-size:0.72rem; line-height:1.55; }
+    .med-compare-title { color:#60a5fa; font-family:'Courier New',monospace; font-size:0.68rem; letter-spacing:0.08em; margin-bottom:6px; }
+    .med-compare-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin:8px 0; }
+    .med-compare-stat { padding:8px; border:1px solid rgba(255,255,255,0.08); border-radius:7px; }
+    .med-compare-stat small { display:block; color:rgba(255,255,255,0.42); margin-bottom:2px; }
+    .med-compare-note { color:rgba(255,255,255,0.48); font-size:0.65rem; }
     .med-label { font-size:0.62rem; letter-spacing:1px; color:#93c5fd; flex-shrink:0; }
     .med-input { background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:6px; padding:6px 9px; color:#fff; font-family:'Courier New',monospace; font-size:0.72rem; outline:none; }
     .med-input:focus { border-color:#60a5fa; }
@@ -242,7 +272,7 @@
     .hist-type-badge { font-size:0.56rem; letter-spacing:1px; padding:2px 7px; border-radius:8px; background:rgba(255,255,255,0.07); color:rgba(255,255,255,0.38); margin-left:4px; }
 
     /* ── Admin Dashboard ── */
-    #adminOverlay { position:absolute; inset:0; z-index:90; background:rgba(0,0,0,0.75); backdrop-filter:blur(12px); overflow-y:auto; display:flex; justify-content:center; align-items:flex-start; padding:40px 16px; transition:opacity 0.4s; }
+    #adminOverlay { position:absolute; inset:0; z-index:109; background:rgba(0,0,0,0.75); backdrop-filter:blur(12px); overflow-y:auto; display:flex; justify-content:center; align-items:flex-start; padding:40px 16px; transition:opacity 0.4s; }
     .admin-card { background:rgba(4,6,16,0.97); border:1px solid rgba(255,255,255,0.1); border-radius:20px; padding:24px; width:100%; max-width:620px; }
     .admin-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; }
     .admin-title { font-size:0.65rem; letter-spacing:5px; color:rgba(255,255,255,0.35); }
@@ -441,6 +471,7 @@
           <button class="hist-filter-btn" style="--fc:#fb923c" onclick="setHistFilter('gait',this)">3.9</button>
           <button class="hist-filter-btn" style="--fc:#e879f9" onclick="setHistFilter('face',this)">3.2</button>
         </div>
+        <div id="medicationComparison" class="med-compare"></div>
       </div>
 
       <!-- Log view -->
@@ -601,6 +632,13 @@
         <div class="drop-hint">MP4 · MOV · WEBM — any duration</div>
       </div>
       <input type="file" id="videoFileInput" accept="video/*" style="display:none">
+      <label class="hawk-consent" for="hawkIConsent">
+        <input type="checkbox" id="hawkIConsent">
+        <span>
+          <strong>HAWK_I RESEARCH REVIEW 연결</strong>
+          <span>선택한 영상과 환자 보고 복약 시점 정보를 Hawk_I 연구 서버로 전송해 CORAL 분석을 함께 실행합니다. 동의하지 않으면 ParkiCheck 기기 내 분석만 수행합니다.</span>
+        </span>
+      </label>
     </div>
   </div>
 
@@ -649,6 +687,20 @@
       </div>
       <div id="confidenceTag">-- CONFIDENCE</div>
       <div id="updrsDesc"></div>
+      <section id="hawkIReview" class="hawk-review hidden-review" aria-live="polite">
+        <div class="hawk-review-head">
+          <span class="hawk-review-brand">HAWK_I · RESEARCH ENGINE</span>
+          <span id="hawkIReviewBadge" class="hawk-review-badge">NOT SENT</span>
+        </div>
+        <p id="hawkIReviewStatus" class="hawk-review-status">ParkiCheck 기기 내 분석만 사용했습니다.</p>
+        <div id="hawkIReviewResult" class="hawk-review-grid" hidden>
+          <div class="hawk-review-metric"><div id="hawkIScore" class="hawk-review-value">—</div><div class="hawk-review-label">ORDINAL SIGNAL</div></div>
+          <div class="hawk-review-metric"><div id="hawkIConfidence" class="hawk-review-value">—</div><div class="hawk-review-label">CONFIDENCE</div></div>
+          <div class="hawk-review-metric"><div id="hawkIGate" class="hawk-review-value">—</div><div class="hawk-review-label">QUALITY GATE</div></div>
+        </div>
+        <p id="hawkIAdvisory" class="hawk-review-advisory"></p>
+        <p class="hawk-review-boundary">연구 보조 관측치입니다. 진단·자동 처방이 아니며 Kinelo로 자동 전송되지 않습니다. 최종 해석은 담당자가 검토합니다.</p>
+      </section>
       <div id="saveResultRow" style="margin-bottom:12px;display:flex;gap:8px;justify-content:center">
         <button class="btn-primary" id="saveResultBtn" onclick="handleSaveResult()" style="font-size:0.78rem;padding:10px 22px">💾 결과 저장</button>
         <span id="saveResultMsg" style="font-size:0.72rem;color:rgba(255,255,255,0.45);align-self:center"></span>
@@ -690,6 +742,9 @@ try {
 let currentUser = null;
 let lastResultPayload = null;
 let cameraStarted = false;
+let currentAssessmentSessionId = null;
+let hawkIReviewPromise = null;
+let lastHawkIResult = null;
 
 let _personId = null; // cached persons.id for current auth user
 let _orgId    = null; // cached organization_id (personal solo org) for current auth user
@@ -762,6 +817,49 @@ function setLastResultPayload(payload) {
   trackAnalytics('assessment_completed', buildAssessmentAnalytics(payload));
 }
 
+function createAssessmentSessionId() {
+  return crypto.randomUUID();
+}
+
+function getMedicationContext(at = new Date()) {
+  const logs = getMedLogs()
+    .filter((log) => log?.taken_at && new Date(log.taken_at) <= at)
+    .sort((a, b) => new Date(b.taken_at) - new Date(a.taken_at));
+  const latest = logs[0];
+  if (!latest) return {
+    available: false,
+    source: 'patient_reported_local',
+    assessment_at: at.toISOString(),
+  };
+  const elapsedHours = (at - new Date(latest.taken_at)) / 36e5;
+  return {
+    available: true,
+    source: 'patient_reported_local',
+    medication: latest.medication || null,
+    dose_mg: latest.dose_mg ?? null,
+    taken_at: latest.taken_at,
+    assessment_at: at.toISOString(),
+    hours_before_assessment: Number(elapsedHours.toFixed(2)),
+  };
+}
+
+function normalizedHawkIResult(result) {
+  if (!result || !window.HawkIClient) return null;
+  const summary = window.HawkIClient.summarizeResult(result);
+  return {
+    analysis_id: result.id || result.video_id || null,
+    assessment_session_id: result.assessment_session_id || currentAssessmentSessionId,
+    score: summary.score,
+    score_confidence: summary.confidence,
+    severity: summary.severity,
+    method: summary.method,
+    performability: summary.performability,
+    advisory_level: summary.advisoryLevel,
+    video_type: summary.videoType,
+    supabase_observation: result.integrations?.supabase_observation || null,
+  };
+}
+
 supa.auth.onAuthStateChange((_e, session) => {
   currentUser = session?.user ?? null;
   updateAuthUI();
@@ -814,7 +912,7 @@ function showAssessSelector() {
   document.getElementById('landingOverlay').classList.add('hidden');
   document.getElementById('startOverlay').classList.add('hidden');
   document.getElementById('assessSelector').classList.remove('hidden');
-  if (lastResultPayload) { saveResultToDb(lastResultPayload); lastResultPayload = null; }
+  if (lastResultPayload) void handleSaveResult();
 }
 
 async function doLogin() {
@@ -823,9 +921,11 @@ async function doLogin() {
   const errEl = document.getElementById('loginErr');
   errEl.textContent = '';
   document.getElementById('loginBtn').textContent = '...';
-  const { error } = await supa.auth.signInWithPassword({ email, password: pw });
+  const { data, error } = await supa.auth.signInWithPassword({ email, password: pw });
   document.getElementById('loginBtn').textContent = 'LOGIN';
   if (error) { errEl.textContent = error.message; return; }
+  currentUser = data.user;
+  updateAuthUI();
   trackAnalytics('login_completed', { auth_method: 'email_password' });
   showAssessSelector();
 }
@@ -890,37 +990,40 @@ async function saveResultToDb(payload) {
   let error;
 
   if (personId && orgId) {
-    // Write to physio_app core observations table
-    ({ error } = await supa.from('observations').insert({
-      fhir_id:            crypto.randomUUID(),
-      subject_person_id:  personId,
-      organization_id:    orgId,
-      created_by:         personId,
-      status:             'final',
-      source_type:        'device',
-      code:               'UPDRS_3_4',
-      code_system:        'http://www.nih.gov/updrs',
-      code_display:       'UPDRS Part III Item 3.4 – Finger Tapping',
-      category:           ['motor-assessment', 'neurological'],
-      value_type:         'integer',
-      value_integer:      payload.score,
-      measurement_context: {
-        frequency:    payload.frequency,
-        amplitude:    payload.max_amplitude,
-        arrests:      payload.arrests,
-        iti_cv:       payload.iti_cv,
-        fatigability: payload.fatigability,
-        confidence:   payload.confidence,
-        mode:         payload.mode,
-        n_taps:       payload.n_taps,
-        duration_sec: payload.duration_sec,
-        factors:      payload.factors,
-      },
-      effective_datetime: new Date().toISOString(),
-    }));
+    if (!window.ParkiAssessmentSession) {
+      error = new Error('평가 세션 연결 모듈을 불러오지 못했습니다.');
+    } else {
+      const identity = { personId, organizationId: orgId, createdBy: personId };
+      const sessionRow = window.ParkiAssessmentSession.buildActivitySessionRow(payload, identity);
+      ({ error } = await supa
+        .from('activity_sessions')
+        .upsert(sessionRow, { onConflict: 'id' }));
+
+      if (!error) {
+        const observationRow = window.ParkiAssessmentSession.buildObservationRow(
+          payload,
+          identity,
+          sessionRow.id,
+        );
+        ({ error } = await supa
+          .from('observations')
+          .upsert(observationRow, { onConflict: 'fhir_id' }));
+      }
+    }
   } else {
     // Fallback: legacy table (no org/person required)
-    ({ error } = await supa.from('updrs_results').insert({ ...payload, user_id: currentUser.id }));
+    ({ error } = await supa.from('updrs_results').insert({
+      ...payload,
+      factors: {
+        ...payload.factors,
+        integration: {
+          assessment_session_id: payload.assessment_session_id,
+          medication_context: payload.medication_context,
+          hawk_i: payload.hawk_i,
+        },
+      },
+      user_id: currentUser.id,
+    }));
   }
 
   btnEl.disabled = false;
@@ -934,13 +1037,18 @@ async function saveResultToDb(payload) {
   }
 }
 
-function handleSaveResult() {
+async function handleSaveResult() {
   if (!lastResultPayload) return;
   if (!currentUser) {
     openAuth('login');
     return;
   }
-  saveResultToDb(lastResultPayload);
+  if (hawkIReviewPromise) {
+    document.getElementById('saveResultMsg').textContent = 'Hawk_I 분석 결과를 기다리는 중...';
+    await hawkIReviewPromise;
+  }
+  if (lastHawkIResult) lastResultPayload.hawk_i = normalizedHawkIResult(lastHawkIResult);
+  await saveResultToDb(lastResultPayload);
 }
 
 // ── History / Chart / Med Log ────────────────
@@ -972,6 +1080,7 @@ async function showHistory() {
       fatigability: r.measurement_context?.fatigability,
       confidence:  r.measurement_context?.confidence,
       factors:     r.measurement_context?.factors,
+      medication_context: r.measurement_context?.medication_context,
     }));
   } else {
     const { data } = await supa
@@ -984,6 +1093,7 @@ async function showHistory() {
 
   histResults = rawData;
   histMedLogs = getMedLogs();
+  renderMedicationComparison();
   setTimeout(refreshHistChart, 60);
 }
 
@@ -1038,8 +1148,36 @@ function refreshHistChart() {
   const dpr = window.devicePixelRatio || 1;
   canvas.width  = canvas.offsetWidth  * dpr;
   canvas.height = canvas.offsetHeight * dpr;
+  renderMedicationComparison();
   if(!histResults.length) return;
   drawHistChart(canvas, histResults, histMedLogs, activeHistFilter);
+}
+
+function formatObservedDelta(value, suffix = '') {
+  if (value === null || value === undefined) return '—';
+  return `${value > 0 ? '+' : ''}${value}${suffix}`;
+}
+
+function renderMedicationComparison() {
+  const target = document.getElementById('medicationComparison');
+  if (!target || !window.ParkiMedicationComparison) return;
+  const comparison = window.ParkiMedicationComparison.buildMedicationComparison(histResults, activeHistFilter);
+  if (!comparison.available) {
+    target.innerHTML = `<div class="med-compare-title">REPEATED MEDICATION CONTEXT</div>
+      <div>동일 검사·동일 약명·동일 용량의 저장 결과가 2회 이상 필요합니다.</div>
+      <div class="med-compare-note">현재 비교 가능한 관찰 ${comparison.observation_count || 0}회 · 약효 또는 ON/OFF 상태는 추정하지 않습니다.</div>`;
+    return;
+  }
+  const firstHours = comparison.first.hours_after_reported_dose;
+  const latestHours = comparison.latest.hours_after_reported_dose;
+  target.innerHTML = `<div class="med-compare-title">OBSERVED REPEATED MEASUREMENTS</div>
+    <div>${comparison.medication}${comparison.dose_mg === null ? '' : ` ${comparison.dose_mg}mg`} · 동일 조건 관찰 ${comparison.observation_count}회</div>
+    <div class="med-compare-grid">
+      <div class="med-compare-stat"><small>첫 관찰</small>${comparison.first.score}/4 · 복용 후 ${firstHours ?? '—'}h</div>
+      <div class="med-compare-stat"><small>최근 관찰</small>${comparison.latest.score}/4 · 복용 후 ${latestHours ?? '—'}h</div>
+      <div class="med-compare-stat"><small>관찰된 변화</small>점수 ${formatObservedDelta(comparison.observed_change.score)}</div>
+    </div>
+    <div class="med-compare-note">검사 빈도 변화 ${formatObservedDelta(comparison.observed_change.frequency, 'Hz')} · 반복 관찰의 단순 차이이며 약효, 인과관계, 복약 변경 필요성을 의미하지 않습니다. 의료진 검토가 필요합니다.</div>`;
 }
 
 function drawHistChart(canvas, results, medLogs, filter) {
@@ -1383,6 +1521,7 @@ let seqNextTimer = null;
 let pendingResolve = null;   // resolves after each hands.onResults in video mode
 let videoAnalysisDuration = 10; // seconds (updated from actual video)
 let vLB = { x:0, y:0, w:0, h:0 }; // letterbox geometry for current video
+let hawkIReviewController = null;
 
 // ═══════════════════════════════════════════
 // AUDIO
@@ -1779,11 +1918,15 @@ function showResults(durationSec = 10, title = 'UPDRS 3.4 — FINGER TAPPING') {
 
   const confC={HIGH:'#00ffcc',MEDIUM:'#ffff00',LOW:'#ff8800'};
   const ct=el('confidenceTag'); ct.textContent=`${confidence} CONFIDENCE  (n=${n})`; ct.style.color=confC[confidence]; ct.style.borderColor=confC[confidence];
+  el('hawkIReview').classList.toggle('hidden-review', appMode !== 'video');
 
   el('resultsOverlay').classList.add('visible');
 
   // Prepare save payload
   setLastResultPayload({
+    assessment_session_id: currentAssessmentSessionId || createAssessmentSessionId(),
+    medication_context: getMedicationContext(new Date()),
+    hawk_i: lastHawkIResult ? normalizedHawkIResult(lastHawkIResult) : null,
     mode: appMode === 'video' ? 'video' : 'live',
     score, raw_score: parseFloat(raw.toFixed(3)),
     n_taps: n, frequency: parseFloat(freq.toFixed(2)),
@@ -2145,13 +2288,108 @@ videoEl.muted=true; videoEl.preload='auto'; videoEl.playsInline=true;
 videoEl.style.cssText='position:fixed;left:-9999px;top:-9999px;opacity:0;pointer-events:none;';
 document.body.appendChild(videoEl);
 
+function setHawkIReviewState(state, badge, message) {
+  const panel = document.getElementById('hawkIReview');
+  const badgeEl = document.getElementById('hawkIReviewBadge');
+  panel.classList.remove('hidden-review');
+  badgeEl.dataset.state = state;
+  badgeEl.textContent = badge;
+  document.getElementById('hawkIReviewStatus').textContent = message;
+}
+
+function prepareHawkIReview(enabled) {
+  const result = document.getElementById('hawkIReviewResult');
+  const advisory = document.getElementById('hawkIAdvisory');
+  result.hidden = true;
+  advisory.textContent = '';
+
+  if (!enabled) {
+    setHawkIReviewState('idle', 'NOT SENT', '전송 동의가 없어 ParkiCheck 기기 내 분석만 수행했습니다.');
+    return;
+  }
+
+  setHawkIReviewState('working', 'UPLOADING', '동의한 영상을 Hawk_I 연구 서버로 전송하고 있습니다.');
+}
+
+function renderHawkIResult(result) {
+  const summary = window.HawkIClient.summarizeResult(result);
+  document.getElementById('hawkIScore').textContent = summary.score === null ? '—' : `${summary.score}/4`;
+  document.getElementById('hawkIConfidence').textContent = summary.confidence === null
+    ? '—'
+    : `${Math.round(summary.confidence * 100)}%`;
+  document.getElementById('hawkIGate').textContent = summary.performability.replaceAll('_', ' ').toUpperCase();
+  document.getElementById('hawkIAdvisory').textContent = summary.advisory;
+  document.getElementById('hawkIReviewResult').hidden = false;
+  if (summary.score === null) {
+    setHawkIReviewState('done', 'MANUAL REVIEW', '자동 점수가 생성되지 않아 원본 관측과 품질 상태를 담당자가 검토해야 합니다.');
+  } else {
+    setHawkIReviewState('done', 'REVIEW READY', 'ParkiCheck 관측과 나란히 볼 Hawk_I 분석이 준비되었습니다.');
+  }
+}
+
+async function startHawkIReview(file) {
+  if (!window.HawkIClient) {
+    setHawkIReviewState('error', 'UNAVAILABLE', 'Hawk_I 연결 모듈을 불러오지 못했습니다.');
+    return null;
+  }
+
+  if (hawkIReviewController) hawkIReviewController.abort();
+  hawkIReviewController = new AbortController();
+
+  try {
+    const assessmentSessionId = currentAssessmentSessionId || createAssessmentSessionId();
+    currentAssessmentSessionId = assessmentSessionId;
+    const patientId = `research-${assessmentSessionId}`;
+    const previewCandidate = new URLSearchParams(window.location.search).get('hawk_i_base');
+    const previewBaseUrl = window.HawkIClient.resolveAllowedPreviewBaseUrl(previewCandidate);
+    const uploadCandidate = new URLSearchParams(window.location.search).get('hawk_i_upload_base');
+    const uploadBaseUrl = window.HawkIClient.resolveAllowedUploadBaseUrl(uploadCandidate);
+    const result = await window.HawkIClient.submitVideo(file, {
+      signal: hawkIReviewController.signal,
+      assessmentSessionId,
+      patientId,
+      medicationContext: getMedicationContext(new Date()),
+      ...(previewBaseUrl ? {baseUrl: previewBaseUrl} : {}),
+      ...(uploadBaseUrl ? {uploadBaseUrl} : {}),
+      onStatus: ({phase}) => {
+        if (phase === 'analyzing') {
+          setHawkIReviewState('working', 'ANALYZING', 'Hawk_I가 움직임 특징과 분석 가능성을 검토하고 있습니다.');
+        }
+      },
+    });
+    lastHawkIResult = result;
+    if (lastResultPayload?.assessment_session_id === assessmentSessionId) {
+      lastResultPayload.hawk_i = normalizedHawkIResult(result);
+    }
+    renderHawkIResult(result);
+    trackAnalytics('hawk_i_review_completed', { test_type:'finger', signed_in:!!currentUser });
+    return result;
+  } catch(error) {
+    if (error?.name === 'AbortError') return null;
+    setHawkIReviewState('error', 'REVIEW FAILED', error?.message || 'Hawk_I 분석을 완료하지 못했습니다.');
+    trackAnalytics('hawk_i_review_failed', { test_type:'finger', signed_in:!!currentUser });
+    return null;
+  }
+}
+
 async function analyzeVideoFile(file) {
+  testType = 'finger';
   trackAnalytics('assessment_started', {
     assessment_mode: 'video',
     test_type: 'finger',
     test_label: 'FINGER TAPPING',
     signed_in: !!currentUser,
   });
+  if (hawkIReviewController) {
+    hawkIReviewController.abort();
+    hawkIReviewController = null;
+  }
+  currentAssessmentSessionId = createAssessmentSessionId();
+  lastHawkIResult = null;
+  hawkIReviewPromise = null;
+  const hawkIEnabled = document.getElementById('hawkIConsent').checked;
+  prepareHawkIReview(hawkIEnabled);
+  if (hawkIEnabled) hawkIReviewPromise = startHawkIReview(file);
   // Reset
   Object.assign(testData,{taps:[],arrests:0,startTime:0,lastTapT:0,currentMaxDist:0});
   const keys = Object.keys(prevTap).filter(k=>k.startsWith('vid-'));
