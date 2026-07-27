@@ -40,3 +40,12 @@ test('history renders an observational repeated medication comparison', () => {
   assert.match(html, /buildMedicationComparison\(histResults, activeHistFilter\)/);
   assert.match(html, /약효, 인과관계, 복약 변경 필요성을 의미하지 않습니다/);
 });
+
+test('history and admin chart canvases do not block their controls', () => {
+  assert.doesNotMatch(html, /(^|[}\s])canvas\s*\{\s*position\s*:\s*absolute/m);
+  assert.match(html, /#canvas\s*\{\s*position\s*:\s*absolute/);
+  assert.match(html, /#histChartCanvas\s*\{[^}]*display\s*:\s*block/);
+  assert.match(html, /#profileBadge\s*\{[^}]*z-index\s*:\s*107/);
+  assert.match(html, /#historyOverlay\s*\{[^}]*z-index\s*:\s*108/);
+  assert.match(html, /#adminOverlay\s*\{[^}]*z-index\s*:\s*109/);
+});
