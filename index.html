@@ -2350,12 +2350,15 @@ async function startHawkIReview(file) {
     const patientId = `research-${assessmentSessionId}`;
     const previewCandidate = new URLSearchParams(window.location.search).get('hawk_i_base');
     const previewBaseUrl = window.HawkIClient.resolveAllowedPreviewBaseUrl(previewCandidate);
+    const uploadCandidate = new URLSearchParams(window.location.search).get('hawk_i_upload_base');
+    const uploadBaseUrl = window.HawkIClient.resolveAllowedUploadBaseUrl(uploadCandidate);
     const result = await window.HawkIClient.submitVideo(file, {
       signal: hawkIReviewController.signal,
       assessmentSessionId,
       patientId,
       medicationContext: getMedicationContext(new Date()),
       ...(previewBaseUrl ? {baseUrl: previewBaseUrl} : {}),
+      ...(uploadBaseUrl ? {uploadBaseUrl} : {}),
       onStatus: ({phase}) => {
         if (phase === 'analyzing') {
           setHawkIReviewState('working', 'ANALYZING', 'Hawk_I가 움직임 특징과 분석 가능성을 검토하고 있습니다.');

@@ -61,6 +61,23 @@
     }
   }
 
+  function resolveAllowedUploadBaseUrl(candidate) {
+    if (!candidate) return null;
+    try {
+      const url = new URL(candidate);
+      const vercelBase = resolveAllowedPreviewBaseUrl(candidate);
+      if (vercelBase) return vercelBase;
+
+      const isHomeDesktopFunnel = url.hostname === 'desktop-t43sn5m-1.tailde3b80.ts.net';
+      const normalizedPath = url.pathname.replace(/\/+$/, '');
+      const isHawkIPath = normalizedPath === '/hawkeye-preview' || normalizedPath === '/hawkeye-api';
+      if (url.protocol !== 'https:' || !isHomeDesktopFunnel || !isHawkIPath) return null;
+      return `${url.origin}${normalizedPath}`;
+    } catch (_error) {
+      return null;
+    }
+  }
+
   async function readJson(response, fallbackMessage) {
     let payload = null;
 
@@ -115,6 +132,7 @@
     const fetchImpl = options.fetchImpl || fetch;
     const sleep = options.sleep || ((duration) => new Promise((resolve) => setTimeout(resolve, duration)));
     const baseUrl = (options.baseUrl || DEFAULT_BASE_URL).replace(/\/$/, '');
+    const uploadBaseUrl = (options.uploadBaseUrl || baseUrl).replace(/\/$/, '');
     const pollIntervalMs = options.pollIntervalMs ?? 1500;
     const maxPolls = options.maxPolls ?? 240;
     const onStatus = options.onStatus || (() => {});
@@ -136,7 +154,7 @@
     }
 
     onStatus({ phase: 'uploading' });
-    const startResponse = await fetchImpl(`${baseUrl}/api/analyze`, {
+    const startResponse = await fetchImpl(`${uploadBaseUrl}/api/analyze`, {
       method: 'POST',
       body: formData,
       signal,
@@ -182,6 +200,7 @@
     MAX_VIDEO_BYTES,
     normalizeMedicationContext,
     resolveAllowedPreviewBaseUrl,
+    resolveAllowedUploadBaseUrl,
     submitVideo,
     summarizeResult,
     validateVideo,

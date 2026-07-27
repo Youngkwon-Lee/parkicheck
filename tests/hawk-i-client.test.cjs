@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const {
   normalizeMedicationContext,
   resolveAllowedPreviewBaseUrl,
+  resolveAllowedUploadBaseUrl,
   submitVideo,
   summarizeResult,
   validateVideo,
@@ -78,6 +79,7 @@ test('submitVideo sends a consented finger task and returns the completed result
 
   const returned = await submitVideo(video, {
     baseUrl: 'https://hawk.example',
+    uploadBaseUrl: 'https://upload.hawk.example/direct',
     assessmentSessionId: 'assessment-123',
     patientId: 'research-assessment-123',
     medicationContext: {
@@ -99,7 +101,8 @@ test('submitVideo sends a consented finger task and returns the completed result
   });
 
   assert.deepEqual(returned, result);
-  assert.equal(calls[0].url, 'https://hawk.example/api/analyze');
+  assert.equal(calls[0].url, 'https://upload.hawk.example/direct/api/analyze');
+  assert.equal(calls[1].url, 'https://hawk.example/api/analysis/progress/review-123');
   assert.equal(calls[0].options.body.get('test_type'), 'finger_tapping');
   assert.equal(calls[0].options.body.get('scoring_method'), 'coral');
   assert.equal(calls[0].options.body.get('assessment_session_id'), 'assessment-123');
@@ -154,4 +157,18 @@ test('preview base URL accepts only the Hawk I team deployment', () => {
   );
   assert.equal(resolveAllowedPreviewBaseUrl('https://attacker.vercel.app'), null);
   assert.equal(resolveAllowedPreviewBaseUrl('http://hawkeye-labeling-tool.vercel.app'), null);
+});
+
+test('direct upload base accepts only the bounded Hawk I Funnel paths', () => {
+  assert.equal(
+    resolveAllowedUploadBaseUrl('https://desktop-t43sn5m-1.tailde3b80.ts.net/hawkeye-preview/'),
+    'https://desktop-t43sn5m-1.tailde3b80.ts.net/hawkeye-preview',
+  );
+  assert.equal(
+    resolveAllowedUploadBaseUrl('https://desktop-t43sn5m-1.tailde3b80.ts.net/hawkeye-api'),
+    'https://desktop-t43sn5m-1.tailde3b80.ts.net/hawkeye-api',
+  );
+  assert.equal(resolveAllowedUploadBaseUrl('https://desktop-t43sn5m-1.tailde3b80.ts.net/'), null);
+  assert.equal(resolveAllowedUploadBaseUrl('https://attacker.example/hawkeye-preview'), null);
+  assert.equal(resolveAllowedUploadBaseUrl('http://desktop-t43sn5m-1.tailde3b80.ts.net/hawkeye-preview'), null);
 });

@@ -12,6 +12,12 @@ test('ParkiCheck persists one assessment session across local and Hawk I results
   assert.match(html, /lastResultPayload\.hawk_i = normalizedHawkIResult/);
 });
 
+test('ParkiCheck can split direct video upload from same-origin result polling', () => {
+  assert.match(html, /get\('hawk_i_upload_base'\)/);
+  assert.match(html, /resolveAllowedUploadBaseUrl\(uploadCandidate\)/);
+  assert.match(html, /uploadBaseUrl/);
+});
+
 test('ParkiCheck stores patient-reported medication context with the assessment', () => {
   assert.match(html, /medication_context:\s*getMedicationContext\(new Date\(\)\)/);
   assert.match(html, /medication_context:\s*payload\.medication_context/);
