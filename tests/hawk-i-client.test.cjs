@@ -1,7 +1,12 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { submitVideo, summarizeResult, validateVideo } = require('../hawk-i-client.js');
+const {
+  resolveAllowedPreviewBaseUrl,
+  submitVideo,
+  summarizeResult,
+  validateVideo,
+} = require('../hawk-i-client.js');
 
 function jsonResponse(payload, status = 200) {
   return new Response(JSON.stringify(payload), {
@@ -99,4 +104,13 @@ test('validateVideo rejects oversized input before transmission', () => {
     () => validateVideo({ size: 101 * 1024 * 1024, type: 'video/mp4' }),
     /100MB/,
   );
+});
+
+test('preview base URL accepts only the Hawk I team deployment', () => {
+  assert.equal(
+    resolveAllowedPreviewBaseUrl('https://hawkeye-labeling-tool-abc123-22s-projects-de7c705f.vercel.app/path'),
+    'https://hawkeye-labeling-tool-abc123-22s-projects-de7c705f.vercel.app',
+  );
+  assert.equal(resolveAllowedPreviewBaseUrl('https://attacker.vercel.app'), null);
+  assert.equal(resolveAllowedPreviewBaseUrl('http://hawkeye-labeling-tool.vercel.app'), null);
 });

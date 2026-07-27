@@ -2305,10 +2305,13 @@ async function startHawkIReview(file) {
     const assessmentSessionId = currentAssessmentSessionId || createAssessmentSessionId();
     currentAssessmentSessionId = assessmentSessionId;
     const patientId = `research-${assessmentSessionId}`;
+    const previewCandidate = new URLSearchParams(window.location.search).get('hawk_i_base');
+    const previewBaseUrl = window.HawkIClient.resolveAllowedPreviewBaseUrl(previewCandidate);
     const result = await window.HawkIClient.submitVideo(file, {
       signal: hawkIReviewController.signal,
       assessmentSessionId,
       patientId,
+      ...(previewBaseUrl ? {baseUrl: previewBaseUrl} : {}),
       onStatus: ({phase}) => {
         if (phase === 'analyzing') {
           setHawkIReviewState('working', 'ANALYZING', 'Hawk_I가 움직임 특징과 분석 가능성을 검토하고 있습니다.');

@@ -12,6 +12,19 @@
   const DEFAULT_BASE_URL = 'https://hawkeye-labeling-tool.vercel.app';
   const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
 
+  function resolveAllowedPreviewBaseUrl(candidate) {
+    if (!candidate) return null;
+    try {
+      const url = new URL(candidate);
+      const isProduction = url.hostname === 'hawkeye-labeling-tool.vercel.app';
+      const isTeamPreview = /^hawkeye-labeling-tool-[a-z0-9-]+-22s-projects-de7c705f\.vercel\.app$/.test(url.hostname);
+      if (url.protocol !== 'https:' || (!isProduction && !isTeamPreview)) return null;
+      return url.origin;
+    } catch (_error) {
+      return null;
+    }
+  }
+
   async function readJson(response, fallbackMessage) {
     let payload = null;
 
@@ -127,6 +140,7 @@
   return {
     DEFAULT_BASE_URL,
     MAX_VIDEO_BYTES,
+    resolveAllowedPreviewBaseUrl,
     submitVideo,
     summarizeResult,
     validateVideo,
