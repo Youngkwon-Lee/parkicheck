@@ -27,6 +27,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
   <script src="./hawk-i-client.js"></script>
+  <script src="./medication-comparison.js"></script>
 
   <style>
     :root {
@@ -251,6 +252,12 @@
     .hist-filter-btn { padding:3px 9px; border:1px solid rgba(255,255,255,0.1); border-radius:10px; cursor:pointer; font-family:'Courier New',monospace; font-size:0.58rem; letter-spacing:1px; background:transparent; color:rgba(255,255,255,0.38); transition:all 0.2s; }
     .hist-filter-btn.active { border-color:var(--fc,#00ffcc); color:var(--fc,#00ffcc); background:rgba(255,255,255,0.05); }
     .med-form { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-bottom:14px; padding:10px 12px; background:rgba(96,165,250,0.06); border:1px solid rgba(96,165,250,0.18); border-radius:10px; }
+    .med-compare { margin-top:14px; padding:12px 14px; border:1px solid rgba(96,165,250,0.24); border-radius:10px; background:rgba(96,165,250,0.06); font-size:0.72rem; line-height:1.55; }
+    .med-compare-title { color:#60a5fa; font-family:'Courier New',monospace; font-size:0.68rem; letter-spacing:0.08em; margin-bottom:6px; }
+    .med-compare-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin:8px 0; }
+    .med-compare-stat { padding:8px; border:1px solid rgba(255,255,255,0.08); border-radius:7px; }
+    .med-compare-stat small { display:block; color:rgba(255,255,255,0.42); margin-bottom:2px; }
+    .med-compare-note { color:rgba(255,255,255,0.48); font-size:0.65rem; }
     .med-label { font-size:0.62rem; letter-spacing:1px; color:#93c5fd; flex-shrink:0; }
     .med-input { background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:6px; padding:6px 9px; color:#fff; font-family:'Courier New',monospace; font-size:0.72rem; outline:none; }
     .med-input:focus { border-color:#60a5fa; }
@@ -463,6 +470,7 @@
           <button class="hist-filter-btn" style="--fc:#fb923c" onclick="setHistFilter('gait',this)">3.9</button>
           <button class="hist-filter-btn" style="--fc:#e879f9" onclick="setHistFilter('face',this)">3.2</button>
         </div>
+        <div id="medicationComparison" class="med-compare"></div>
       </div>
 
       <!-- Log view -->
@@ -1080,6 +1088,7 @@ async function showHistory() {
       fatigability: r.measurement_context?.fatigability,
       confidence:  r.measurement_context?.confidence,
       factors:     r.measurement_context?.factors,
+      medication_context: r.measurement_context?.medication_context,
     }));
   } else {
     const { data } = await supa
@@ -1092,6 +1101,7 @@ async function showHistory() {
 
   histResults = rawData;
   histMedLogs = getMedLogs();
+  renderMedicationComparison();
   setTimeout(refreshHistChart, 60);
 }
 
@@ -1146,8 +1156,36 @@ function refreshHistChart() {
   const dpr = window.devicePixelRatio || 1;
   canvas.width  = canvas.offsetWidth  * dpr;
   canvas.height = canvas.offsetHeight * dpr;
+  renderMedicationComparison();
   if(!histResults.length) return;
   drawHistChart(canvas, histResults, histMedLogs, activeHistFilter);
+}
+
+function formatObservedDelta(value, suffix = '') {
+  if (value === null || value === undefined) return '—';
+  return `${value > 0 ? '+' : ''}${value}${suffix}`;
+}
+
+function renderMedicationComparison() {
+  const target = document.getElementById('medicationComparison');
+  if (!target || !window.ParkiMedicationComparison) return;
+  const comparison = window.ParkiMedicationComparison.buildMedicationComparison(histResults, activeHistFilter);
+  if (!comparison.available) {
+    target.innerHTML = `<div class="med-compare-title">REPEATED MEDICATION CONTEXT</div>
+      <div>동일 검사·동일 약명·동일 용량의 저장 결과가 2회 이상 필요합니다.</div>
+      <div class="med-compare-note">현재 비교 가능한 관찰 ${comparison.observation_count || 0}회 · 약효 또는 ON/OFF 상태는 추정하지 않습니다.</div>`;
+    return;
+  }
+  const firstHours = comparison.first.hours_after_reported_dose;
+  const latestHours = comparison.latest.hours_after_reported_dose;
+  target.innerHTML = `<div class="med-compare-title">OBSERVED REPEATED MEASUREMENTS</div>
+    <div>${comparison.medication}${comparison.dose_mg === null ? '' : ` ${comparison.dose_mg}mg`} · 동일 조건 관찰 ${comparison.observation_count}회</div>
+    <div class="med-compare-grid">
+      <div class="med-compare-stat"><small>첫 관찰</small>${comparison.first.score}/4 · 복용 후 ${firstHours ?? '—'}h</div>
+      <div class="med-compare-stat"><small>최근 관찰</small>${comparison.latest.score}/4 · 복용 후 ${latestHours ?? '—'}h</div>
+      <div class="med-compare-stat"><small>관찰된 변화</small>점수 ${formatObservedDelta(comparison.observed_change.score)}</div>
+    </div>
+    <div class="med-compare-note">검사 빈도 변화 ${formatObservedDelta(comparison.observed_change.frequency, 'Hz')} · 반복 관찰의 단순 차이이며 약효, 인과관계, 복약 변경 필요성을 의미하지 않습니다. 의료진 검토가 필요합니다.</div>`;
 }
 
 function drawHistChart(canvas, results, medLogs, filter) {

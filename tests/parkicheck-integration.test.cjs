@@ -24,3 +24,10 @@ test('saving waits for the consented Hawk I review to finish', () => {
   assert.match(html, /if \(hawkIReviewPromise\)[\s\S]*await hawkIReviewPromise/);
   assert.match(html, /if \(lastResultPayload\) void handleSaveResult\(\)/);
 });
+
+test('history renders an observational repeated medication comparison', () => {
+  assert.match(html, /medication-comparison\.js/);
+  assert.match(html, /id="medicationComparison"/);
+  assert.match(html, /buildMedicationComparison\(histResults, activeHistFilter\)/);
+  assert.match(html, /약효, 인과관계, 복약 변경 필요성을 의미하지 않습니다/);
+});
