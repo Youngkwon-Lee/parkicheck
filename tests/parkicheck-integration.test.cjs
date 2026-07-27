@@ -29,6 +29,10 @@ test('ParkiCheck stores patient-reported medication context with the assessment'
   assert.match(html, /영상과 환자 보고 복약 시점 정보를/);
 });
 
+test('video analysis resets stale assessment selection to finger tapping', () => {
+  assert.match(html, /async function analyzeVideoFile\(file\) \{\s*testType = 'finger';/);
+});
+
 test('saving waits for the consented Hawk I review to finish', () => {
   assert.match(html, /if \(hawkIReviewPromise\)[\s\S]*await hawkIReviewPromise/);
   assert.match(html, /if \(lastResultPayload\) void handleSaveResult\(\)/);

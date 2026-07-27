@@ -2371,6 +2371,7 @@ async function startHawkIReview(file) {
 }
 
 async function analyzeVideoFile(file) {
+  testType = 'finger';
   trackAnalytics('assessment_started', {
     assessment_mode: 'video',
     test_type: 'finger',
