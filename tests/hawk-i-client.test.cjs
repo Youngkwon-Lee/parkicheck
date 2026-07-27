@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+  normalizeMedicationContext,
   resolveAllowedPreviewBaseUrl,
   submitVideo,
   summarizeResult,
@@ -79,6 +80,15 @@ test('submitVideo sends a consented finger task and returns the completed result
     baseUrl: 'https://hawk.example',
     assessmentSessionId: 'assessment-123',
     patientId: 'research-assessment-123',
+    medicationContext: {
+      available: true,
+      source: 'patient_reported_local',
+      medication: '레보도파',
+      dose_mg: 100,
+      taken_at: '2026-07-27T00:00:00.000Z',
+      assessment_at: '2026-07-27T01:30:00.000Z',
+      hours_before_assessment: 1.5,
+    },
     fetchImpl: async (url, options = {}) => {
       calls.push({ url, options });
       return responses.shift();
@@ -94,9 +104,40 @@ test('submitVideo sends a consented finger task and returns the completed result
   assert.equal(calls[0].options.body.get('scoring_method'), 'coral');
   assert.equal(calls[0].options.body.get('assessment_session_id'), 'assessment-123');
   assert.equal(calls[0].options.body.get('patient_id'), 'research-assessment-123');
+  assert.deepEqual(JSON.parse(calls[0].options.body.get('medication_context')), {
+    available: true,
+    source: 'patient_reported_local',
+    assessment_at: '2026-07-27T01:30:00.000Z',
+    taken_at: '2026-07-27T00:00:00.000Z',
+    medication: '레보도파',
+    dose_mg: 100,
+    hours_before_assessment: 1.5,
+  });
   assert.equal(calls[0].options.body.get('physio_subject_person_id'), null);
   assert.equal(calls[0].options.body.get('physio_organization_id'), null);
   assert.deepEqual(statuses, ['uploading', 'analyzing', 'analyzing', 'completed']);
+});
+
+test('normalizeMedicationContext keeps only bounded patient-reported fields', () => {
+  assert.deepEqual(normalizeMedicationContext({
+    available: true,
+    source: 'untrusted',
+    medication: ` ${'a'.repeat(120)} `,
+    dose_mg: -1,
+    taken_at: '2026-07-27T00:00:00Z',
+    assessment_at: '2026-07-27T01:00:00Z',
+    hours_before_assessment: 1,
+    secret: 'discard-me',
+  }), {
+    available: true,
+    source: 'patient_reported_local',
+    assessment_at: '2026-07-27T01:00:00.000Z',
+    taken_at: '2026-07-27T00:00:00.000Z',
+    medication: 'a'.repeat(100),
+    dose_mg: null,
+    hours_before_assessment: 1,
+  });
+  assert.equal(normalizeMedicationContext({ available: true, taken_at: 'invalid' }), null);
 });
 
 test('validateVideo rejects oversized input before transmission', () => {

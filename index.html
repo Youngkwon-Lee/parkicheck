@@ -627,7 +627,7 @@
         <input type="checkbox" id="hawkIConsent">
         <span>
           <strong>HAWK_I RESEARCH REVIEW 연결</strong>
-          <span>선택한 영상을 Hawk_I 연구 서버로 전송해 CORAL 분석을 함께 실행합니다. 동의하지 않으면 ParkiCheck 기기 내 분석만 수행합니다.</span>
+          <span>선택한 영상과 환자 보고 복약 시점 정보를 Hawk_I 연구 서버로 전송해 CORAL 분석을 함께 실행합니다. 동의하지 않으면 ParkiCheck 기기 내 분석만 수행합니다.</span>
         </span>
       </label>
     </div>
@@ -817,7 +817,11 @@ function getMedicationContext(at = new Date()) {
     .filter((log) => log?.taken_at && new Date(log.taken_at) <= at)
     .sort((a, b) => new Date(b.taken_at) - new Date(a.taken_at));
   const latest = logs[0];
-  if (!latest) return { available: false, source: 'patient_reported_local' };
+  if (!latest) return {
+    available: false,
+    source: 'patient_reported_local',
+    assessment_at: at.toISOString(),
+  };
   const elapsedHours = (at - new Date(latest.taken_at)) / 36e5;
   return {
     available: true,
@@ -825,6 +829,7 @@ function getMedicationContext(at = new Date()) {
     medication: latest.medication || null,
     dose_mg: latest.dose_mg ?? null,
     taken_at: latest.taken_at,
+    assessment_at: at.toISOString(),
     hours_before_assessment: Number(elapsedHours.toFixed(2)),
   };
 }
@@ -2311,6 +2316,7 @@ async function startHawkIReview(file) {
       signal: hawkIReviewController.signal,
       assessmentSessionId,
       patientId,
+      medicationContext: getMedicationContext(new Date()),
       ...(previewBaseUrl ? {baseUrl: previewBaseUrl} : {}),
       onStatus: ({phase}) => {
         if (phase === 'analyzing') {

@@ -12,6 +12,42 @@
   const DEFAULT_BASE_URL = 'https://hawkeye-labeling-tool.vercel.app';
   const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
 
+  function normalizeMedicationContext(value) {
+    if (!value || typeof value !== 'object') return null;
+
+    const context = {
+      available: value.available === true,
+      source: 'patient_reported_local',
+    };
+    const assessmentAt = new Date(value.assessment_at);
+    if (!Number.isNaN(assessmentAt.getTime())) {
+      context.assessment_at = assessmentAt.toISOString();
+    }
+
+    if (!context.available) return context;
+
+    const takenAt = new Date(value.taken_at);
+    if (Number.isNaN(takenAt.getTime())) return null;
+    context.taken_at = takenAt.toISOString();
+
+    if (typeof value.medication === 'string' && value.medication.trim()) {
+      context.medication = value.medication.trim().slice(0, 100);
+    } else {
+      context.medication = null;
+    }
+
+    const doseMg = Number(value.dose_mg);
+    context.dose_mg = Number.isFinite(doseMg) && doseMg >= 0 && doseMg <= 100000
+      ? doseMg
+      : null;
+
+    const hoursBeforeAssessment = Number(value.hours_before_assessment);
+    context.hours_before_assessment = Number.isFinite(hoursBeforeAssessment) && hoursBeforeAssessment >= 0
+      ? Number(hoursBeforeAssessment.toFixed(2))
+      : null;
+    return context;
+  }
+
   function resolveAllowedPreviewBaseUrl(candidate) {
     if (!candidate) return null;
     try {
@@ -94,6 +130,10 @@
     if (options.patientId) {
       formData.append('patient_id', options.patientId);
     }
+    const medicationContext = normalizeMedicationContext(options.medicationContext);
+    if (medicationContext) {
+      formData.append('medication_context', JSON.stringify(medicationContext));
+    }
 
     onStatus({ phase: 'uploading' });
     const startResponse = await fetchImpl(`${baseUrl}/api/analyze`, {
@@ -140,6 +180,7 @@
   return {
     DEFAULT_BASE_URL,
     MAX_VIDEO_BYTES,
+    normalizeMedicationContext,
     resolveAllowedPreviewBaseUrl,
     submitVideo,
     summarizeResult,

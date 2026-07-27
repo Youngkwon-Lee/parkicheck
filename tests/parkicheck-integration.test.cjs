@@ -16,6 +16,8 @@ test('ParkiCheck stores patient-reported medication context with the assessment'
   assert.match(html, /medication_context:\s*getMedicationContext\(new Date\(\)\)/);
   assert.match(html, /medication_context:\s*payload\.medication_context/);
   assert.match(html, /source:\s*'patient_reported_local'/);
+  assert.match(html, /medicationContext:\s*getMedicationContext\(new Date\(\)\)/);
+  assert.match(html, /영상과 환자 보고 복약 시점 정보를/);
 });
 
 test('saving waits for the consented Hawk I review to finish', () => {
