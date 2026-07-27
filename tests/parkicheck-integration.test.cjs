@@ -33,6 +33,11 @@ test('video analysis resets stale assessment selection to finger tapping', () =>
   assert.match(html, /async function analyzeVideoFile\(file\) \{\s*testType = 'finger';/);
 });
 
+test('login applies the authenticated user before opening the assessment', () => {
+  assert.match(html, /const \{ data, error \} = await supa\.auth\.signInWithPassword/);
+  assert.match(html, /currentUser = data\.user;\s*updateAuthUI\(\);\s*trackAnalytics\('login_completed'/);
+});
+
 test('saving waits for the consented Hawk I review to finish', () => {
   assert.match(html, /if \(hawkIReviewPromise\)[\s\S]*await hawkIReviewPromise/);
   assert.match(html, /if \(lastResultPayload\) void handleSaveResult\(\)/);

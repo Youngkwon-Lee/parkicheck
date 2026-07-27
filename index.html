@@ -921,9 +921,11 @@ async function doLogin() {
   const errEl = document.getElementById('loginErr');
   errEl.textContent = '';
   document.getElementById('loginBtn').textContent = '...';
-  const { error } = await supa.auth.signInWithPassword({ email, password: pw });
+  const { data, error } = await supa.auth.signInWithPassword({ email, password: pw });
   document.getElementById('loginBtn').textContent = 'LOGIN';
   if (error) { errEl.textContent = error.message; return; }
+  currentUser = data.user;
+  updateAuthUI();
   trackAnalytics('login_completed', { auth_method: 'email_password' });
   showAssessSelector();
 }
