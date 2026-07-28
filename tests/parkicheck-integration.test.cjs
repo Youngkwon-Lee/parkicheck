@@ -32,6 +32,14 @@ test('ParkiCheck stores patient-reported medication context with the assessment'
   assert.match(html, /영상과 환자 보고 복약 시점 정보를/);
 });
 
+test('medication logs use the authenticated Supabase timeline with local fallback', () => {
+  assert.match(html, /medication-events\.js/);
+  assert.match(html, /from\('medication_statements'\)[\s\S]*insert\(row\)/);
+  assert.match(html, /like\('fhir_id', 'parkicheck-medication-%'\)/);
+  assert.match(html, /mergeMedicationLogs\(getLocalMedLogs\(\), serverMedicationLogs\)/);
+  assert.match(html, /서버 저장 실패 · 기록은 이 기기에 보관되었습니다/);
+});
+
 test('video analysis resets stale assessment selection to finger tapping', () => {
   assert.match(html, /async function analyzeVideoFile\(file\) \{\s*testType = 'finger';/);
 });

@@ -27,6 +27,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
   <script src="./hawk-i-client.js"></script>
+  <script src="./medication-events.js"></script>
   <script src="./medication-comparison.js"></script>
   <script src="./assessment-session.js"></script>
 
@@ -485,6 +486,7 @@
           <input class="med-input" type="datetime-local" id="medTime" style="font-size:0.65rem;flex:1;min-width:130px">
           <button class="btn-primary" style="font-size:0.68rem;padding:7px 13px" onclick="saveMedLog()">+ 기록</button>
         </div>
+        <div id="medSyncStatus" style="font-size:0.62rem;color:rgba(255,255,255,0.45);margin:-6px 2px 10px">로그인된 계정의 Supabase 타임라인에 저장됩니다.</div>
         <div id="historyList"><div class="hist-empty">불러오는 중...</div></div>
       </div>
     </div>
@@ -746,6 +748,8 @@ let currentAssessmentSessionId = null;
 let currentAssessmentMedicationContext = null;
 let hawkIReviewPromise = null;
 let lastHawkIResult = null;
+let serverMedicationLogs = [];
+let medicationServerLoaded = false;
 
 let _personId = null; // cached persons.id for current auth user
 let _orgId    = null; // cached organization_id (personal solo org) for current auth user
@@ -850,7 +854,7 @@ function getMedicationContext(at = new Date()) {
   const elapsedHours = (at - new Date(latest.taken_at)) / 36e5;
   return {
     available: true,
-    source: 'patient_reported_local',
+    source: latest.source === 'supabase' ? 'patient_reported_supabase' : 'patient_reported_local',
     medication: latest.medication || null,
     dose_mg: latest.dose_mg ?? null,
     taken_at: latest.taken_at,
@@ -880,6 +884,11 @@ function normalizedHawkIResult(result) {
 supa.auth.onAuthStateChange((_e, session) => {
   currentUser = session?.user ?? null;
   updateAuthUI();
+  if (currentUser) void refreshServerMedicationLogs();
+  else {
+    serverMedicationLogs = [];
+    medicationServerLoaded = false;
+  }
 });
 
 // On load: silently cache session state
@@ -887,6 +896,7 @@ supa.auth.getSession().then(({ data }) => {
   if (data.session) {
     currentUser = data.session.user;
     updateAuthUI();
+    void refreshServerMedicationLogs();
   }
 }).catch(() => {});
 
@@ -945,6 +955,7 @@ async function doLogin() {
   updateAuthUI();
   trackAnalytics('login_completed', { auth_method: 'email_password' });
   showAssessSelector();
+  void refreshServerMedicationLogs();
 }
 
 async function doSignup() {
@@ -982,6 +993,7 @@ async function doSignup() {
 async function doSignOut() {
   await supa.auth.signOut();
   currentUser = null; _personId = null; _orgId = null;
+  serverMedicationLogs = []; medicationServerLoaded = false;
   document.getElementById('profileMenu').classList.remove('open');
   cameraStarted = false;
   try { camera.stop(); } catch(e) {}
@@ -1113,6 +1125,7 @@ async function showHistory() {
   }
 
   histResults = rawData;
+  if (personId) await refreshServerMedicationLogs(personId);
   histMedLogs = getMedLogs();
   renderMedicationComparison();
   setTimeout(refreshHistChart, 60);
@@ -1137,26 +1150,126 @@ function setHistFilter(type, btn) {
   refreshHistChart();
 }
 
-// ── Medication log (localStorage) ────────────
+// ── Medication log (Supabase + local fallback) ────────────
+function medicationStorageKey() {
+  return currentUser ? `pkc_meds_${currentUser.id}` : null;
+}
+
+function getLocalMedLogs() {
+  const key = medicationStorageKey();
+  if(!key) return [];
+  try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch { return []; }
+}
+
+function setLocalMedLogs(logs) {
+  const key = medicationStorageKey();
+  if(key) localStorage.setItem(key, JSON.stringify(logs));
+}
+
 function getMedLogs() {
   if(!currentUser) return [];
-  try { return JSON.parse(localStorage.getItem(`pkc_meds_${currentUser.id}`) || '[]'); } catch { return []; }
+  if(!window.ParkiMedicationEvents) return getLocalMedLogs();
+  return window.ParkiMedicationEvents.mergeMedicationLogs(getLocalMedLogs(), serverMedicationLogs);
 }
-function saveMedLog() {
+
+function setMedicationSyncStatus(message, color = 'rgba(255,255,255,0.45)') {
+  const status = document.getElementById('medSyncStatus');
+  if(!status) return;
+  status.textContent = message;
+  status.style.color = color;
+}
+
+async function refreshServerMedicationLogs(existingPersonId = null) {
+  if(!currentUser || !window.ParkiMedicationEvents) return getMedLogs();
+  const personId = existingPersonId || (await bootstrapPersonalContext()).personId;
+  if(!personId) return getMedLogs();
+  try {
+    const { data, error } = await supa
+      .from('medication_statements')
+      .select('id,fhir_id,medication_code,medication_display,effective_start,dosage')
+      .eq('subject_person_id', personId)
+      .like('fhir_id', 'parkicheck-medication-%')
+      .order('effective_start', { ascending: true })
+      .limit(200);
+    if(error) throw error;
+    serverMedicationLogs = (data || []).map(row => window.ParkiMedicationEvents.parseMedicationStatementRow(row));
+    medicationServerLoaded = true;
+    histMedLogs = getMedLogs();
+    setMedicationSyncStatus(`Supabase 동기화 완료 · 서버 기록 ${serverMedicationLogs.length}건`, '#00ffcc');
+  } catch(error) {
+    medicationServerLoaded = false;
+    console.warn('Medication timeline sync failed:', error);
+    setMedicationSyncStatus('서버 동기화 실패 · 이 기기의 로컬 기록을 사용합니다.', '#ffb84d');
+  }
+  return getMedLogs();
+}
+
+async function persistMedicationLog(log) {
+  if(!window.ParkiMedicationEvents) throw new Error('약물 기록 연결 모듈을 불러오지 못했습니다.');
+  const { personId, orgId } = await bootstrapPersonalContext();
+  if(!personId || !orgId) throw new Error('사용자 타임라인을 준비하지 못했습니다.');
+  const row = window.ParkiMedicationEvents.buildMedicationStatementRow(log, {
+    personId,
+    organizationId: orgId,
+  });
+  const { data, error } = await supa
+    .from('medication_statements')
+    .insert(row)
+    .select('id,fhir_id,medication_code,medication_display,effective_start,dosage')
+    .single();
+  if(error) throw error;
+  const saved = window.ParkiMedicationEvents.parseMedicationStatementRow(data);
+  serverMedicationLogs = window.ParkiMedicationEvents.mergeMedicationLogs(serverMedicationLogs, [saved]);
+  medicationServerLoaded = true;
+  return saved;
+}
+
+async function saveMedLog() {
   if(!currentUser) return;
   const med  = document.getElementById('medName').value;
   const dose = parseInt(document.getElementById('medDose').value) || null;
   const time = document.getElementById('medTime').value;
   if(!time) return;
-  const logs = getMedLogs();
-  logs.push({id:Date.now(), taken_at:new Date(time).toISOString(), medication:med, dose_mg:dose});
-  localStorage.setItem(`pkc_meds_${currentUser.id}`, JSON.stringify(logs));
-  histMedLogs = logs;
+  const eventId = crypto.randomUUID();
+  const log = {
+    id: eventId,
+    event_id: eventId,
+    taken_at: new Date(time).toISOString(),
+    medication: med,
+    dose_mg: dose,
+    sync_state: 'pending',
+    source: 'local',
+  };
+  const localLogs = getLocalMedLogs();
+  localLogs.push(log);
+  setLocalMedLogs(localLogs);
+  histMedLogs = getMedLogs();
   refreshHistChart();
   renderHistList();
   const btn = document.querySelector('.med-form .btn-primary');
-  const orig = btn.textContent; btn.textContent='✓'; btn.style.color='#00ffcc';
-  setTimeout(()=>{btn.textContent=orig;btn.style.color='';},1200);
+  const orig = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '저장 중';
+  try {
+    await persistMedicationLog(log);
+    setLocalMedLogs(getLocalMedLogs().filter(item => (item.event_id || item.id) !== eventId));
+    histMedLogs = getMedLogs();
+    renderHistList();
+    refreshHistChart();
+    btn.textContent = '✓ 서버 저장';
+    btn.style.color = '#00ffcc';
+    setMedicationSyncStatus(`Supabase 동기화 완료 · 서버 기록 ${serverMedicationLogs.length}건`, '#00ffcc');
+    trackAnalytics('medication_event_saved', { server_saved: true });
+  } catch(error) {
+    console.warn('Medication event server save failed:', error);
+    btn.textContent = '⚠ 로컬 저장';
+    btn.style.color = '#ffb84d';
+    setMedicationSyncStatus('서버 저장 실패 · 기록은 이 기기에 보관되었습니다.', '#ffb84d');
+    trackAnalytics('medication_event_saved', { server_saved: false });
+  } finally {
+    btn.disabled = false;
+    setTimeout(()=>{btn.textContent=orig;btn.style.color='';},1600);
+  }
 }
 
 // ── Chart rendering ───────────────────────────
@@ -1292,7 +1405,7 @@ function renderHistList() {
     if(item._med) return `<div class="hist-row">
       <div class="hist-score" style="background:rgba(96,165,250,0.12);border:2px solid #60a5fa;color:#60a5fa;font-size:1rem">💊</div>
       <div class="hist-meta"><div class="hist-date">${ds}</div>
-      <div class="hist-detail">${item.medication}${item.dose_mg?` ${item.dose_mg}mg`:''}</div></div></div>`;
+      <div class="hist-detail">${item.medication}${item.dose_mg?` ${item.dose_mg}mg`:''}${item.sync_state==='synced'?' · 서버 저장':' · 로컬 보관'}</div></div></div>`;
     const c=SCORE_COLORS[item.score]||'#fff';
     const type=item.factors?.test_type||'finger';
     return `<div class="hist-row">
