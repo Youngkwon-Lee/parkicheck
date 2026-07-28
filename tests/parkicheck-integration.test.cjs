@@ -11,6 +11,8 @@ test('ParkiCheck persists one assessment session across local and Hawk I results
   assert.match(html, /from\('observations'\)[\s\S]*upsert\(observationRow, \{ onConflict: 'fhir_id' \}\)/);
   assert.match(html, /buildObservationRow\([\s\S]*payload,[\s\S]*identity,[\s\S]*sessionRow\.id/);
   assert.match(html, /assessmentSessionId,\s*patientId,/s);
+  assert.match(html, /assessmentContext,/);
+  assert.match(html, /buildAssessmentContext\(\{/);
   assert.match(html, /patientId = `research-\$\{assessmentSessionId\}`/);
   assert.match(html, /lastResultPayload\.hawk_i = normalizedHawkIResult/);
 });
@@ -22,10 +24,11 @@ test('ParkiCheck can split direct video upload from same-origin result polling',
 });
 
 test('ParkiCheck stores patient-reported medication context with the assessment', () => {
-  assert.match(html, /medication_context:\s*getMedicationContext\(new Date\(\)\)/);
+  assert.match(html, /medication_context: payload\?\.medication_context \|\| getMedicationContext\(new Date\(\)\)/);
+  assert.match(html, /currentAssessmentMedicationContext \|\| getMedicationContext\(new Date\(\)\)/);
   assert.match(html, /medication_context:\s*payload\.medication_context/);
   assert.match(html, /source:\s*'patient_reported_local'/);
-  assert.match(html, /medicationContext:\s*getMedicationContext\(new Date\(\)\)/);
+  assert.match(html, /medicationContext,/);
   assert.match(html, /영상과 환자 보고 복약 시점 정보를/);
 });
 
@@ -41,6 +44,13 @@ test('login applies the authenticated user before opening the assessment', () =>
 test('saving waits for the consented Hawk I review to finish', () => {
   assert.match(html, /if \(hawkIReviewPromise\)[\s\S]*await hawkIReviewPromise/);
   assert.match(html, /if \(lastResultPayload\) void handleSaveResult\(\)/);
+});
+
+test('every result gets a fresh canonical save contract and resets the save action', () => {
+  assert.match(html, /assessment_session_id: payload\?\.assessment_session_id \|\| createAssessmentSessionId\(\)/);
+  assert.match(html, /medication_context: payload\?\.medication_context \|\| getMedicationContext\(new Date\(\)\)/);
+  assert.match(html, /saveBtn\.style\.display = '';/);
+  assert.match(html, /currentAssessmentMedicationContext = getMedicationContext\(new Date\(\)\)/);
 });
 
 test('history renders an observational repeated medication comparison', () => {

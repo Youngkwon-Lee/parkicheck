@@ -743,6 +743,7 @@ let currentUser = null;
 let lastResultPayload = null;
 let cameraStarted = false;
 let currentAssessmentSessionId = null;
+let currentAssessmentMedicationContext = null;
 let hawkIReviewPromise = null;
 let lastHawkIResult = null;
 
@@ -813,8 +814,23 @@ function buildAssessmentAnalytics(payload = {}) {
 }
 
 function setLastResultPayload(payload) {
-  lastResultPayload = payload;
-  trackAnalytics('assessment_completed', buildAssessmentAnalytics(payload));
+  lastResultPayload = {
+    ...payload,
+    assessment_session_id: payload?.assessment_session_id || createAssessmentSessionId(),
+    medication_context: payload?.medication_context || getMedicationContext(new Date()),
+    hawk_i: payload?.hawk_i || null,
+  };
+  const saveBtn = document.getElementById('saveResultBtn');
+  const saveMsg = document.getElementById('saveResultMsg');
+  if (saveBtn) {
+    saveBtn.style.display = '';
+    saveBtn.disabled = false;
+  }
+  if (saveMsg) {
+    saveMsg.textContent = currentUser ? '' : '로그인하면 기록이 저장됩니다';
+    saveMsg.style.color = '';
+  }
+  trackAnalytics('assessment_completed', buildAssessmentAnalytics(lastResultPayload));
 }
 
 function createAssessmentSessionId() {
@@ -857,6 +873,7 @@ function normalizedHawkIResult(result) {
     advisory_level: summary.advisoryLevel,
     video_type: summary.videoType,
     supabase_observation: result.integrations?.supabase_observation || null,
+    integration_context: result.physio_context || null,
   };
 }
 
@@ -993,21 +1010,25 @@ async function saveResultToDb(payload) {
     if (!window.ParkiAssessmentSession) {
       error = new Error('평가 세션 연결 모듈을 불러오지 못했습니다.');
     } else {
-      const identity = { personId, organizationId: orgId, createdBy: personId };
-      const sessionRow = window.ParkiAssessmentSession.buildActivitySessionRow(payload, identity);
-      ({ error } = await supa
-        .from('activity_sessions')
-        .upsert(sessionRow, { onConflict: 'id' }));
-
-      if (!error) {
-        const observationRow = window.ParkiAssessmentSession.buildObservationRow(
-          payload,
-          identity,
-          sessionRow.id,
-        );
+      try {
+        const identity = { personId, organizationId: orgId, createdBy: personId };
+        const sessionRow = window.ParkiAssessmentSession.buildActivitySessionRow(payload, identity);
         ({ error } = await supa
-          .from('observations')
-          .upsert(observationRow, { onConflict: 'fhir_id' }));
+          .from('activity_sessions')
+          .upsert(sessionRow, { onConflict: 'id' }));
+
+        if (!error) {
+          const observationRow = window.ParkiAssessmentSession.buildObservationRow(
+            payload,
+            identity,
+            sessionRow.id,
+          );
+          ({ error } = await supa
+            .from('observations')
+            .upsert(observationRow, { onConflict: 'fhir_id' }));
+        }
+      } catch (saveError) {
+        error = saveError;
       }
     }
   } else {
@@ -1924,9 +1945,13 @@ function showResults(durationSec = 10, title = 'UPDRS 3.4 — FINGER TAPPING') {
 
   // Prepare save payload
   setLastResultPayload({
-    assessment_session_id: currentAssessmentSessionId || createAssessmentSessionId(),
-    medication_context: getMedicationContext(new Date()),
-    hawk_i: lastHawkIResult ? normalizedHawkIResult(lastHawkIResult) : null,
+    assessment_session_id: appMode === 'video'
+      ? (currentAssessmentSessionId || createAssessmentSessionId())
+      : createAssessmentSessionId(),
+    medication_context: appMode === 'video'
+      ? (currentAssessmentMedicationContext || getMedicationContext(new Date()))
+      : getMedicationContext(new Date()),
+    hawk_i: appMode === 'video' && lastHawkIResult ? normalizedHawkIResult(lastHawkIResult) : null,
     mode: appMode === 'video' ? 'video' : 'live',
     score, raw_score: parseFloat(raw.toFixed(3)),
     n_taps: n, frequency: parseFloat(freq.toFixed(2)),
@@ -2340,6 +2365,20 @@ async function startHawkIReview(file) {
     const assessmentSessionId = currentAssessmentSessionId || createAssessmentSessionId();
     currentAssessmentSessionId = assessmentSessionId;
     const patientId = `research-${assessmentSessionId}`;
+    const medicationContext = currentAssessmentMedicationContext || getMedicationContext(new Date());
+    let assessmentContext = null;
+    const { personId, orgId } = await bootstrapPersonalContext();
+    if (personId && orgId && window.ParkiAssessmentSession) {
+      assessmentContext = window.ParkiAssessmentSession.buildAssessmentContext({
+        assessment_session_id: assessmentSessionId,
+        medication_context: medicationContext,
+      }, {
+        personId,
+        organizationId: orgId,
+        createdBy: personId,
+        performerPersonId: personId,
+      });
+    }
     const previewCandidate = new URLSearchParams(window.location.search).get('hawk_i_base');
     const previewBaseUrl = window.HawkIClient.resolveAllowedPreviewBaseUrl(previewCandidate);
     const uploadCandidate = new URLSearchParams(window.location.search).get('hawk_i_upload_base');
@@ -2348,7 +2387,8 @@ async function startHawkIReview(file) {
       signal: hawkIReviewController.signal,
       assessmentSessionId,
       patientId,
-      medicationContext: getMedicationContext(new Date()),
+      medicationContext,
+      assessmentContext,
       ...(previewBaseUrl ? {baseUrl: previewBaseUrl} : {}),
       ...(uploadBaseUrl ? {uploadBaseUrl} : {}),
       onStatus: ({phase}) => {
@@ -2385,6 +2425,7 @@ async function analyzeVideoFile(file) {
     hawkIReviewController = null;
   }
   currentAssessmentSessionId = createAssessmentSessionId();
+  currentAssessmentMedicationContext = getMedicationContext(new Date());
   lastHawkIResult = null;
   hawkIReviewPromise = null;
   const hawkIEnabled = document.getElementById('hawkIConsent').checked;
