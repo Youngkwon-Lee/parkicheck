@@ -11,6 +11,7 @@
 })(typeof window !== 'undefined' ? window : globalThis, function createHawkIClient() {
   const DEFAULT_BASE_URL = 'https://hawkeye-labeling-tool.vercel.app';
   const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
+  const TIMELINE_CONTRACT_VERSION = 'parkicheck-hawk-i/v1';
 
   function normalizeMedicationContext(value) {
     if (!value || typeof value !== 'object') return null;
@@ -180,6 +181,9 @@
     formData.append('scoring_method', 'coral');
     if (options.assessmentSessionId) {
       formData.append('assessment_session_id', options.assessmentSessionId);
+      formData.append('physio_activity_session_id', options.assessmentSessionId);
+      formData.append('physio_contract_version', TIMELINE_CONTRACT_VERSION);
+      formData.append('physio_persistence_owner', 'parkicheck');
     }
     if (options.patientId) {
       formData.append('patient_id', options.patientId);
@@ -245,6 +249,7 @@
   return {
     DEFAULT_BASE_URL,
     MAX_VIDEO_BYTES,
+    TIMELINE_CONTRACT_VERSION,
     normalizeAssessmentContext,
     normalizeMedicationContext,
     resolveAllowedPreviewBaseUrl,

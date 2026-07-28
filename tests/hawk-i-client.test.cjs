@@ -8,6 +8,7 @@ const {
   resolveAllowedUploadBaseUrl,
   submitVideo,
   summarizeResult,
+  TIMELINE_CONTRACT_VERSION,
   validateVideo,
 } = require('../hawk-i-client.js');
 
@@ -115,6 +116,9 @@ test('submitVideo sends a consented finger task and returns the completed result
   assert.equal(calls[0].options.body.get('test_type'), 'finger_tapping');
   assert.equal(calls[0].options.body.get('scoring_method'), 'coral');
   assert.equal(calls[0].options.body.get('assessment_session_id'), 'assessment-123');
+  assert.equal(calls[0].options.body.get('physio_activity_session_id'), 'assessment-123');
+  assert.equal(calls[0].options.body.get('physio_contract_version'), TIMELINE_CONTRACT_VERSION);
+  assert.equal(calls[0].options.body.get('physio_persistence_owner'), 'parkicheck');
   assert.equal(calls[0].options.body.get('patient_id'), 'research-assessment-123');
   assert.deepEqual(JSON.parse(calls[0].options.body.get('medication_context')), {
     available: true,

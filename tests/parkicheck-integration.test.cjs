@@ -23,6 +23,12 @@ test('ParkiCheck can split direct video upload from same-origin result polling',
   assert.match(html, /uploadBaseUrl/);
 });
 
+test('ParkiCheck declares caller-owned persistence for the shared timeline', () => {
+  assert.match(html, /assessment_session_id:\s*r\.measurement_context\?\.assessment_session_id/);
+  assert.match(html, /hawk_i:\s*r\.measurement_context\?\.hawk_i/);
+  assert.match(html, /hist-hawk-badge/);
+});
+
 test('ParkiCheck stores patient-reported medication context with the assessment', () => {
   assert.match(html, /medication_context: payload\?\.medication_context \|\| getMedicationContext\(new Date\(\)\)/);
   assert.match(html, /currentAssessmentMedicationContext \|\| getMedicationContext\(new Date\(\)\)/);
