@@ -20,11 +20,31 @@
     return Number.isFinite(parsed) ? parsed : null;
   }
 
-  function buildActivitySessionRow(payload, identity) {
+  function buildAssessmentContext(payload, identity) {
     const assessmentSessionId = requiredText(payload?.assessment_session_id, 'assessment_session_id');
     const personId = requiredText(identity?.personId, 'person_id');
     const organizationId = requiredText(identity?.organizationId, 'organization_id');
     const createdBy = requiredText(identity?.createdBy || personId, 'created_by');
+    const performerPersonId = requiredText(identity?.performerPersonId || personId, 'performer_person_id');
+
+    return {
+      contract_version: 'parkicheck-hawk-i/v1',
+      assessment_session_id: assessmentSessionId,
+      subject_person_id: personId,
+      organization_id: organizationId,
+      created_by_person_id: createdBy,
+      performer_person_id: performerPersonId,
+      persistence_owner: 'parkicheck',
+      medication_context: payload?.medication_context || null,
+    };
+  }
+
+  function buildActivitySessionRow(payload, identity) {
+    const context = buildAssessmentContext(payload, identity);
+    const assessmentSessionId = context.assessment_session_id;
+    const personId = context.subject_person_id;
+    const organizationId = context.organization_id;
+    const createdBy = context.created_by_person_id;
     const duration = finiteNumber(payload?.duration_sec);
 
     const row = {
@@ -39,6 +59,7 @@
       metrics: {
         app_source: 'parkicheck',
         assessment_session_id: assessmentSessionId,
+        integration_context: context,
         medication_context: payload?.medication_context || null,
         parkicheck: {
           score: finiteNumber(payload?.score),
@@ -63,12 +84,13 @@
   }
 
   function buildObservationRow(payload, identity, activitySessionId) {
-    const assessmentSessionId = requiredText(payload?.assessment_session_id, 'assessment_session_id');
+    const context = buildAssessmentContext(payload, identity);
+    const assessmentSessionId = context.assessment_session_id;
     const sessionId = requiredText(activitySessionId, 'activity_session_id');
     if (assessmentSessionId !== sessionId) throw new Error('assessment and activity session ids must match');
-    const personId = requiredText(identity?.personId, 'person_id');
-    const organizationId = requiredText(identity?.organizationId, 'organization_id');
-    const createdBy = requiredText(identity?.createdBy || personId, 'created_by');
+    const personId = context.subject_person_id;
+    const organizationId = context.organization_id;
+    const createdBy = context.created_by_person_id;
     const score = finiteNumber(payload?.score);
     if (score === null) throw new Error('score is required');
 
@@ -77,7 +99,7 @@
       subject_person_id: personId,
       organization_id: organizationId,
       created_by: createdBy,
-      performer_person_id: personId,
+      performer_person_id: context.performer_person_id,
       activity_session_id: sessionId,
       status: 'final',
       source_type: 'device',
@@ -90,6 +112,7 @@
       measurement_context: {
         app_source: 'parkicheck',
         assessment_session_id: assessmentSessionId,
+        integration_context: context,
         medication_context: payload?.medication_context || null,
         hawk_i: payload?.hawk_i || null,
         frequency: finiteNumber(payload?.frequency),
@@ -107,5 +130,10 @@
     };
   }
 
-  return { assessmentTimestamp, buildActivitySessionRow, buildObservationRow };
+  return {
+    assessmentTimestamp,
+    buildAssessmentContext,
+    buildActivitySessionRow,
+    buildObservationRow,
+  };
 });

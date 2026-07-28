@@ -48,6 +48,36 @@
     return context;
   }
 
+  function normalizeAssessmentContext(value, assessmentSessionId) {
+    if (!value || typeof value !== 'object') return null;
+    const expectedSessionId = typeof assessmentSessionId === 'string' ? assessmentSessionId.trim() : '';
+    const contextSessionId = typeof value.assessment_session_id === 'string'
+      ? value.assessment_session_id.trim()
+      : '';
+    if (!expectedSessionId || contextSessionId !== expectedSessionId) {
+      throw new Error('ParkiCheck와 Hawk_I의 assessment session이 일치하지 않습니다.');
+    }
+
+    const required = [
+      'subject_person_id',
+      'organization_id',
+      'created_by_person_id',
+      'performer_person_id',
+    ];
+    const normalized = {
+      contract_version: 'parkicheck-hawk-i/v1',
+      assessment_session_id: expectedSessionId,
+      persistence_owner: 'parkicheck',
+    };
+    required.forEach((key) => {
+      if (typeof value[key] !== 'string' || !value[key].trim()) {
+        throw new Error(`${key} is required for Hawk_I integration`);
+      }
+      normalized[key] = value[key].trim();
+    });
+    return normalized;
+  }
+
   function resolveAllowedPreviewBaseUrl(candidate) {
     if (!candidate) return null;
     try {
@@ -154,6 +184,17 @@
     if (options.patientId) {
       formData.append('patient_id', options.patientId);
     }
+    const assessmentContext = normalizeAssessmentContext(
+      options.assessmentContext,
+      options.assessmentSessionId,
+    );
+    if (assessmentContext) {
+      // Hawk I only receives the opaque session contract. Person/org IDs stay
+      // inside ParkiCheck's authenticated Supabase write boundary.
+      formData.append('physio_contract_version', assessmentContext.contract_version);
+      formData.append('physio_activity_session_id', assessmentContext.assessment_session_id);
+      formData.append('physio_persistence_owner', assessmentContext.persistence_owner);
+    }
     const medicationContext = normalizeMedicationContext(options.medicationContext);
     if (medicationContext) {
       formData.append('medication_context', JSON.stringify(medicationContext));
@@ -204,6 +245,7 @@
   return {
     DEFAULT_BASE_URL,
     MAX_VIDEO_BYTES,
+    normalizeAssessmentContext,
     normalizeMedicationContext,
     resolveAllowedPreviewBaseUrl,
     resolveAllowedUploadBaseUrl,

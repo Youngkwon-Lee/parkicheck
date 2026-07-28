@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+  buildAssessmentContext,
   buildActivitySessionRow,
   buildObservationRow,
 } = require('../assessment-session.js');
@@ -35,9 +36,20 @@ const identity = {
 };
 
 test('ParkiCheck uses one canonical activity session for local and Hawk I data', () => {
+  const context = buildAssessmentContext(payload, identity);
   const session = buildActivitySessionRow(payload, identity);
   const observation = buildObservationRow(payload, identity, session.id);
 
+  assert.deepEqual(context, {
+    contract_version: 'parkicheck-hawk-i/v1',
+    assessment_session_id: payload.assessment_session_id,
+    subject_person_id: identity.personId,
+    organization_id: identity.organizationId,
+    created_by_person_id: identity.createdBy,
+    performer_person_id: identity.personId,
+    persistence_owner: 'parkicheck',
+    medication_context: payload.medication_context,
+  });
   assert.equal(session.id, payload.assessment_session_id);
   assert.equal(session.subject_person_id, identity.personId);
   assert.equal(session.metrics.assessment_session_id, payload.assessment_session_id);
@@ -45,6 +57,7 @@ test('ParkiCheck uses one canonical activity session for local and Hawk I data',
   assert.equal(observation.activity_session_id, session.id);
   assert.equal(observation.subject_person_id, identity.personId);
   assert.equal(observation.measurement_context.assessment_session_id, session.id);
+  assert.deepEqual(observation.measurement_context.integration_context, context);
   assert.equal(observation.measurement_context.hawk_i.analysis_id, 'hawk-123');
   assert.equal(observation.measurement_context.medication_context.hours_before_assessment, 1.5);
   assert.equal(observation.effective_datetime, '2026-07-27T01:30:00.000Z');

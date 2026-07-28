@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+  normalizeAssessmentContext,
   normalizeMedicationContext,
   resolveAllowedPreviewBaseUrl,
   resolveAllowedUploadBaseUrl,
@@ -82,6 +83,14 @@ test('submitVideo sends a consented finger task and returns the completed result
     uploadBaseUrl: 'https://upload.hawk.example/direct',
     assessmentSessionId: 'assessment-123',
     patientId: 'research-assessment-123',
+    assessmentContext: {
+      assessment_session_id: 'assessment-123',
+      subject_person_id: 'person-1',
+      organization_id: 'org-1',
+      created_by_person_id: 'person-1',
+      performer_person_id: 'person-1',
+      persistence_owner: 'parkicheck',
+    },
     medicationContext: {
       available: true,
       source: 'patient_reported_local',
@@ -116,9 +125,24 @@ test('submitVideo sends a consented finger task and returns the completed result
     dose_mg: 100,
     hours_before_assessment: 1.5,
   });
+  assert.equal(calls[0].options.body.get('physio_contract_version'), 'parkicheck-hawk-i/v1');
+  assert.equal(calls[0].options.body.get('physio_activity_session_id'), 'assessment-123');
   assert.equal(calls[0].options.body.get('physio_subject_person_id'), null);
   assert.equal(calls[0].options.body.get('physio_organization_id'), null);
+  assert.equal(calls[0].options.body.get('physio_created_by_person_id'), null);
+  assert.equal(calls[0].options.body.get('physio_performer_person_id'), null);
+  assert.equal(calls[0].options.body.get('physio_persistence_owner'), 'parkicheck');
   assert.deepEqual(statuses, ['uploading', 'analyzing', 'analyzing', 'completed']);
+});
+
+test('normalizeAssessmentContext rejects a mismatched cross-service session', () => {
+  assert.throws(() => normalizeAssessmentContext({
+    assessment_session_id: 'assessment-other',
+    subject_person_id: 'person-1',
+    organization_id: 'org-1',
+    created_by_person_id: 'person-1',
+    performer_person_id: 'person-1',
+  }, 'assessment-123'), /session.*일치하지 않습니다/);
 });
 
 test('normalizeMedicationContext keeps only bounded patient-reported fields', () => {
