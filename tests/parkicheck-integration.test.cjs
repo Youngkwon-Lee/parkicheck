@@ -4,6 +4,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+const videoDetectorSource = html.slice(
+  html.indexOf('function detectTapsVideo'),
+  html.indexOf('// TAP DETECTION (live camera)'),
+);
 
 test('ParkiCheck persists one assessment session across local and Hawk I results', () => {
   assert.match(html, /assessment-session\.js/);
@@ -42,6 +46,14 @@ test('medication logs use the authenticated Supabase timeline with local fallbac
 
 test('video analysis resets stale assessment selection to finger tapping', () => {
   assert.match(html, /async function analyzeVideoFile\(file\) \{\s*testType = 'finger';/);
+});
+
+test('video analysis counts index-thumb cycles from only one primary hand', () => {
+  assert.match(html, /video-tap-detector\.js/);
+  assert.match(html, /const primaryHand = handResults\.multiHandLandmarks\[0\]/);
+  assert.match(html, /const tip=landmarks\[FINGER_TIPS\[fi\]\]/);
+  assert.match(html, /videoIndexTapDetector\.observe\(dist,timestampMs\)/);
+  assert.doesNotMatch(videoDetectorSource, /FINGER_TIPS\.forEach/);
 });
 
 test('assessment selector exposes the video-analysis route above its blocking overlay', () => {
