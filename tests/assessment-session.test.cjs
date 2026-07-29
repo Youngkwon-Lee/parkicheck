@@ -85,3 +85,19 @@ test('missing optional metrics remain null instead of becoming zero', () => {
   assert.equal(session.metrics.parkicheck.n_taps, null);
   assert.equal(session.metrics.parkicheck.frequency, null);
 });
+
+test('ParkiCheck can create the shared session before Hawk I upload', () => {
+  const session = buildActivitySessionRow(
+    {
+      assessment_session_id: payload.assessment_session_id,
+      medication_context: payload.medication_context,
+      mode: 'video',
+    },
+    identity,
+    { status: 'in_progress' },
+  );
+
+  assert.equal(session.id, payload.assessment_session_id);
+  assert.equal(session.status, 'in_progress');
+  assert.equal(session.metrics.parkicheck.score, null);
+});
