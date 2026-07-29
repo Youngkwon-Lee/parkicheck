@@ -248,7 +248,7 @@
     .hist-header h2 { font-size:0.72rem; letter-spacing:4px; color:rgba(255,255,255,0.35); margin:0; }
     .hist-header-btns { display:flex; gap:6px; }
     .hist-tabs { display:flex; gap:4px; margin-bottom:14px; }
-    .hist-tab-btn { padding:6px 16px; border:none; border-radius:20px; cursor:pointer; font-family:'Courier New',monospace; font-size:0.65rem; letter-spacing:1px; background:rgba(255,255,255,0.07); color:rgba(255,255,255,0.4); transition:all 0.2s; }
+    .hist-tab-btn { min-height:36px; padding:6px 16px; border:none; border-radius:20px; cursor:pointer; font-family:'Courier New',monospace; font-size:0.65rem; letter-spacing:1px; background:rgba(255,255,255,0.07); color:rgba(255,255,255,0.4); transition:all 0.2s; }
     .hist-tab-btn.active { background:rgba(0,255,204,0.14); color:#00ffcc; }
     #histChartCanvas { display:block; width:100%; height:180px; margin-bottom:10px; }
     .hist-filter-bar { display:flex; gap:4px; flex-wrap:wrap; margin-bottom:14px; }
@@ -262,8 +262,13 @@
     .med-compare-stat small { display:block; color:rgba(255,255,255,0.42); margin-bottom:2px; }
     .med-compare-note { color:rgba(255,255,255,0.48); font-size:0.65rem; }
     .med-label { font-size:0.62rem; letter-spacing:1px; color:#93c5fd; flex-shrink:0; }
-    .med-input { background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:6px; padding:6px 9px; color:#fff; font-family:'Courier New',monospace; font-size:0.72rem; outline:none; }
+    .med-input { min-height:36px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:6px; padding:6px 9px; color:#fff; font-family:'Courier New',monospace; font-size:0.72rem; outline:none; }
     .med-input:focus { border-color:#60a5fa; }
+    .med-form .btn-primary { min-height:36px; }
+    @media (max-width:480px) {
+      .hist-tab-btn, .med-input, .med-form .btn-primary { min-height:44px; }
+      .med-form { gap:8px; }
+    }
     .hist-empty { text-align:center; color:rgba(255,255,255,0.3); font-size:0.82rem; padding:30px 0; }
     .hist-row { display:flex; align-items:center; gap:12px; padding:11px 0; border-bottom:1px solid rgba(255,255,255,0.05); }
     .hist-row:last-child { border-bottom:none; }
@@ -452,13 +457,13 @@
           <button class="btn-primary btn-ghost" style="font-size:0.62rem;padding:6px 13px" onclick="$('historyOverlay').classList.add('hidden')">닫기</button>
         </div>
       </div>
-      <div class="hist-tabs">
-        <button class="hist-tab-btn active" id="htChart" onclick="switchHistTab('chart')">CHART</button>
-        <button class="hist-tab-btn" id="htLog" onclick="switchHistTab('log')">LOG &amp; 약기록</button>
+      <div class="hist-tabs" role="tablist" aria-label="내 기록 보기 방식">
+        <button class="hist-tab-btn active" id="htChart" role="tab" aria-selected="true" aria-controls="histChartView" onclick="switchHistTab('chart')">CHART</button>
+        <button class="hist-tab-btn" id="htLog" role="tab" aria-selected="false" aria-controls="histLogView" onclick="switchHistTab('log')">LOG &amp; 약기록</button>
       </div>
 
       <!-- Chart view -->
-      <div id="histChartView">
+      <div id="histChartView" role="tabpanel" aria-labelledby="htChart">
         <canvas id="histChartCanvas"></canvas>
         <div class="hist-filter-bar">
           <button class="hist-filter-btn active" style="--fc:#fff" onclick="setHistFilter(null,this)">ALL</button>
@@ -477,17 +482,17 @@
       </div>
 
       <!-- Log view -->
-      <div id="histLogView" style="display:none">
+      <div id="histLogView" role="tabpanel" aria-labelledby="htLog" style="display:none">
         <div class="med-form">
           <span class="med-label">💊 약 복용</span>
-          <select class="med-input" id="medName" style="flex:1;min-width:90px">
+          <select class="med-input" id="medName" aria-label="복용 약물" style="flex:1;min-width:90px">
             <option>레보도파</option><option>시네메트</option><option>마도파</option><option>미라펙스</option><option>리큅</option><option>기타</option>
           </select>
-          <input class="med-input" type="number" id="medDose" placeholder="mg" style="width:58px">
-          <input class="med-input" type="datetime-local" id="medTime" style="font-size:0.65rem;flex:1;min-width:130px">
-          <button class="btn-primary" style="font-size:0.68rem;padding:7px 13px" onclick="saveMedLog()">+ 기록</button>
+          <input class="med-input" type="number" id="medDose" min="0" step="0.001" inputmode="decimal" aria-label="복용량 밀리그램" placeholder="mg" style="width:70px">
+          <input class="med-input" type="datetime-local" id="medTime" aria-label="복용 시각" style="font-size:0.65rem;flex:1;min-width:130px">
+          <button class="btn-primary" aria-label="복약 기록 저장" style="font-size:0.68rem;padding:7px 13px" onclick="saveMedLog()">+ 기록</button>
         </div>
-        <div id="medSyncStatus" style="font-size:0.62rem;color:rgba(255,255,255,0.45);margin:-6px 2px 10px">로그인된 계정의 Supabase 타임라인에 저장됩니다.</div>
+        <div id="medSyncStatus" role="status" aria-live="polite" aria-atomic="true" style="font-size:0.62rem;color:rgba(255,255,255,0.45);margin:-6px 2px 10px">로그인된 계정의 Supabase 타임라인에 저장됩니다.</div>
         <div id="historyList"><div class="hist-empty">불러오는 중...</div></div>
       </div>
     </div>
@@ -1134,10 +1139,13 @@ async function showHistory() {
 }
 
 function switchHistTab(tab) {
-  document.getElementById('histChartView').style.display = tab==='chart' ? '' : 'none';
-  document.getElementById('histLogView').style.display   = tab==='log'   ? '' : 'none';
-  document.getElementById('htChart').classList.toggle('active', tab==='chart');
-  document.getElementById('htLog').classList.toggle('active',   tab==='log');
+  const chartActive = tab === 'chart';
+  document.getElementById('histChartView').style.display = chartActive ? '' : 'none';
+  document.getElementById('histLogView').style.display   = chartActive ? 'none' : '';
+  document.getElementById('htChart').classList.toggle('active', chartActive);
+  document.getElementById('htLog').classList.toggle('active', !chartActive);
+  document.getElementById('htChart').setAttribute('aria-selected', String(chartActive));
+  document.getElementById('htLog').setAttribute('aria-selected', String(!chartActive));
   if(tab==='log') {
     const now = new Date(); now.setMinutes(now.getMinutes()-now.getTimezoneOffset());
     document.getElementById('medTime').value = now.toISOString().slice(0,16);
@@ -1229,9 +1237,16 @@ async function persistMedicationLog(log) {
 async function saveMedLog() {
   if(!currentUser) return;
   const med  = document.getElementById('medName').value;
-  const dose = parseInt(document.getElementById('medDose').value) || null;
+  const doseInput = document.getElementById('medDose');
+  const rawDose = doseInput.value.trim();
+  const dose = rawDose === '' ? null : Number(rawDose);
   const time = document.getElementById('medTime').value;
   if(!time) return;
+  if(dose !== null && (!Number.isFinite(dose) || dose < 0)) {
+    setMedicationSyncStatus('복용량은 0 이상의 숫자로 입력해주세요.', '#ffb84d');
+    doseInput.focus();
+    return;
+  }
   const eventId = crypto.randomUUID();
   const log = {
     id: eventId,
@@ -1307,7 +1322,7 @@ function renderMedicationComparison() {
   const firstHours = comparison.first.hours_after_reported_dose;
   const latestHours = comparison.latest.hours_after_reported_dose;
   target.innerHTML = `<div class="med-compare-title">OBSERVED REPEATED MEASUREMENTS</div>
-    <div>${comparison.medication}${comparison.dose_mg === null ? '' : ` ${comparison.dose_mg}mg`} · 동일 조건 관찰 ${comparison.observation_count}회</div>
+    <div>${comparison.medication}${comparison.dose_mg === null ? '' : ` ${comparison.dose_mg}mg`} · 동일 검사·약명·용량 관찰 ${comparison.observation_count}회</div>
     <div class="med-compare-grid">
       <div class="med-compare-stat"><small>첫 관찰</small>${comparison.first.score}/4 · 복용 후 ${firstHours ?? '—'}h</div>
       <div class="med-compare-stat"><small>최근 관찰</small>${comparison.latest.score}/4 · 복용 후 ${latestHours ?? '—'}h</div>
@@ -1392,7 +1407,7 @@ function drawHistChart(canvas, results, medLogs, filter) {
 // ── Log list (interleaved results + med logs) ─
 function renderHistList() {
   const listEl = document.getElementById('historyList');
-  if(!histResults.length&&!histMedLogs.length){listEl.innerHTML='<div class="hist-empty">아직 기록이 없습니다.</div>';return;}
+  if(!histResults.length&&!histMedLogs.length){listEl.innerHTML='<div class="hist-empty">아직 저장된 검사·약기록이 없습니다.<br>검사 결과에서 결과 저장을 누르거나 위에서 복약을 기록하세요.</div>';return;}
   const TYPE_LABEL={finger:'3.4 FINGER',hand:'3.5 HAND',pronation:'3.6 PRONATION',tremor:'3.14 TREMOR',toe:'3.7 TOE',leg:'3.8 LEG',actiontremor:'3.15 A.TREMOR',posture:'3.12 POSTURE',gait:'3.9 GAIT',face:'3.2 FACE'};
   const SEVERITY=['정상','경미','중등도','심각','최중증'];
 
