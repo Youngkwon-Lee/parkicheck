@@ -30,6 +30,7 @@
   <script src="./medication-events.js"></script>
   <script src="./medication-comparison.js"></script>
   <script src="./assessment-session.js"></script>
+  <script src="./video-tap-detector.js"></script>
 
   <style>
     :root {
@@ -1604,6 +1605,11 @@ let testState = 'idle';
 let testType  = 'finger'; // 'finger'|'hand'|'pronation'|'tremor'|'toe'|'leg'
 let graphPulse = 0;
 const testData = { taps:[], startTime:0, arrests:0, lastTapT:0, currentMaxDist:0, handSizeRef:0 };
+const videoIndexTapDetector = ParkiCheckVideoTap.createIndexTapDetector({
+  closeThreshold: 0.055,
+  releaseThreshold: 0.085,
+  cooldownMs: 180,
+});
 
 // 3.5 Hand Movements detection state
 const prevHandOpen = {};
@@ -2575,8 +2581,7 @@ async function analyzeVideoFile(file) {
   if (hawkIEnabled) hawkIReviewPromise = startHawkIReview(file);
   // Reset
   Object.assign(testData,{taps:[],arrests:0,startTime:0,lastTapT:0,currentMaxDist:0});
-  const keys = Object.keys(prevTap).filter(k=>k.startsWith('vid-'));
-  keys.forEach(k=>delete prevTap[k]);
+  videoIndexTapDetector.reset();
 
   document.getElementById('videoDropOverlay').classList.add('hidden');
   document.getElementById('videoProgressOverlay').classList.remove('hidden');
@@ -2633,7 +2638,10 @@ async function analyzeVideoFile(file) {
 
     // Tap detection with video timestamp
     if(handResults && handResults.multiHandLandmarks) {
-      handResults.multiHandLandmarks.forEach((lm,hi)=>detectTapsVideo(lm,hi,t*1000));
+      // UPDRS 3.4 assesses one hand at a time. Count only the primary detected
+      // hand; other visible hands remain drawn for operator awareness.
+      const primaryHand = handResults.multiHandLandmarks[0];
+      if(primaryHand) detectTapsVideo(primaryHand,0,t*1000);
     }
 
     // Draw hand skeleton overlay (no mirror, letterbox coords)
@@ -2671,33 +2679,25 @@ async function analyzeVideoFile(file) {
 function detectTapsVideo(landmarks, handIdx, timestampMs) {
   const thumb=landmarks[THUMB_TIP];
   getTrail(handIdx,'t').add(vLB.x + thumb.x*vLB.w, vLB.y + thumb.y*vLB.h);
+  const fi=0;
+  const tip=landmarks[FINGER_TIPS[fi]];
+  const x=vLB.x + tip.x*vLB.w, y=vLB.y + tip.y*vLB.h;
+  getTrail(handIdx,fi).add(x,y);
+  const dx=thumb.x-tip.x, dy=thumb.y-tip.y;
+  const dist=Math.sqrt(dx*dx+dy*dy);
+  testData.currentMaxDist=Math.max(testData.currentMaxDist,dist);
 
-  FINGER_TIPS.forEach((tipIdx,fi)=>{
-    const tip=landmarks[tipIdx];
-    const x=vLB.x + tip.x*vLB.w, y=vLB.y + tip.y*vLB.h;
-    getTrail(handIdx,fi).add(x,y);
-    const dx=thumb.x-tip.x, dy=thumb.y-tip.y;
-    const dist=Math.sqrt(dx*dx+dy*dy);
-    if(fi===0) testData.currentMaxDist=Math.max(testData.currentMaxDist,dist);
-    const isTap=dist<TAP_THRESH;
-    const key=`vid-${handIdx}-${fi}`;
-    const wasT=prevTap[key]||false;
-    const lastMs=lastTapMs[key]||0;
-    if(isTap&&!wasT&&(timestampMs-lastMs)>TAP_COOLDOWN){
-      // Effects at tap location (visible during analysis)
-      effects.push(new GlowPulse(x,y,FINGER_COLORS[fi]));
-      effects.push(new Shockwave(x,y,FINGER_COLORS[fi],0,1));
-      bgWaves.push(new BgWave(x,y,FINGER_COLORS[fi]));
-      // Record tap
-      const elapsed=timestampMs-testData.lastTapT;
-      if(testData.taps.length>0&&elapsed>ARREST_THRESHOLD) testData.arrests++;
-      testData.taps.push({t:timestampMs, amplitude:testData.currentMaxDist});
-      testData.currentMaxDist=0;
-      testData.lastTapT=timestampMs;
-      lastTapMs[key]=timestampMs;
-    }
-    prevTap[key]=isTap;
-  });
+  if(videoIndexTapDetector.observe(dist,timestampMs)){
+    // Effects at the index-finger contact point (visible during analysis)
+    effects.push(new GlowPulse(x,y,FINGER_COLORS[fi]));
+    effects.push(new Shockwave(x,y,FINGER_COLORS[fi],0,1));
+    bgWaves.push(new BgWave(x,y,FINGER_COLORS[fi]));
+    const elapsed=timestampMs-testData.lastTapT;
+    if(testData.taps.length>0&&elapsed>ARREST_THRESHOLD) testData.arrests++;
+    testData.taps.push({t:timestampMs, amplitude:testData.currentMaxDist});
+    testData.currentMaxDist=0;
+    testData.lastTapT=timestampMs;
+  }
 }
 
 // ═══════════════════════════════════════════
