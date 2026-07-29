@@ -136,6 +136,19 @@
     if (file.type && !file.type.startsWith('video/')) throw new Error('영상 파일만 Hawk_I로 전송할 수 있습니다.');
   }
 
+  function authorizationHeaders(accessToken, required = false) {
+    if (accessToken === null || accessToken === undefined || accessToken === '') {
+      if (required) throw new Error('Hawk_I 환자 분석에는 로그인이 필요합니다.');
+      return {};
+    }
+    if (typeof accessToken !== 'string') throw new Error('Hawk_I 인증 정보가 올바르지 않습니다.');
+    const token = accessToken.trim();
+    if (!token || token.length > 8192 || /\s/.test(token)) {
+      throw new Error('Hawk_I 인증 정보가 올바르지 않습니다.');
+    }
+    return { Authorization: `Bearer ${token}` };
+  }
+
   function summarizeResult(result) {
     const scoreValue = result?.updrs_score?.total_score ?? result?.updrs_score?.score;
     const score = scoreValue !== null && scoreValue !== undefined && scoreValue !== '' && Number.isFinite(Number(scoreValue))
@@ -188,11 +201,14 @@
       options.assessmentContext,
       options.assessmentSessionId,
     );
+    const requestHeaders = authorizationHeaders(options.accessToken, Boolean(assessmentContext));
     if (assessmentContext) {
-      // Hawk I only receives the opaque session contract. Person/org IDs stay
-      // inside ParkiCheck's authenticated Supabase write boundary.
+      // The backend treats these IDs only as selectors. It resolves the caller
+      // from the bearer token and canonicalizes the session through Supabase RLS.
       formData.append('physio_contract_version', assessmentContext.contract_version);
       formData.append('physio_activity_session_id', assessmentContext.assessment_session_id);
+      formData.append('physio_subject_person_id', assessmentContext.subject_person_id);
+      formData.append('physio_organization_id', assessmentContext.organization_id);
       formData.append('physio_persistence_owner', assessmentContext.persistence_owner);
     }
     const medicationContext = normalizeMedicationContext(options.medicationContext);
@@ -203,6 +219,7 @@
     onStatus({ phase: 'uploading' });
     const startResponse = await fetchImpl(`${uploadBaseUrl}/api/analyze`, {
       method: 'POST',
+      headers: requestHeaders,
       body: formData,
       signal,
     });
@@ -217,14 +234,14 @@
 
       const progressResponse = await fetchImpl(
         `${baseUrl}/api/analysis/progress/${encodeURIComponent(started.id)}`,
-        { signal },
+        { headers: requestHeaders, signal },
       );
       const progress = await readJson(progressResponse, 'Hawk_I 진행 상태를 확인하지 못했습니다.');
 
       if (progress.status === 'completed') {
         const resultResponse = await fetchImpl(
           `${baseUrl}/api/analysis/result/${encodeURIComponent(started.id)}`,
-          { signal },
+          { headers: requestHeaders, signal },
         );
         const result = await readJson(resultResponse, 'Hawk_I 결과를 불러오지 못했습니다.');
         onStatus({ phase: 'completed', id: started.id, result });

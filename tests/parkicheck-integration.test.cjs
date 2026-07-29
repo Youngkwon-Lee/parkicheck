@@ -12,7 +12,7 @@ test('ParkiCheck persists one assessment session across local and Hawk I results
   assert.match(html, /buildObservationRow\([\s\S]*payload,[\s\S]*identity,[\s\S]*sessionRow\.id/);
   assert.match(html, /assessmentSessionId,\s*patientId,/s);
   assert.match(html, /assessmentContext,/);
-  assert.match(html, /buildAssessmentContext\(\{/);
+  assert.match(html, /buildAssessmentContext\([\s\S]*assessmentPayload,[\s\S]*identity/);
   assert.match(html, /patientId = `research-\$\{assessmentSessionId\}`/);
   assert.match(html, /lastResultPayload\.hawk_i = normalizedHawkIResult/);
 });
@@ -47,6 +47,15 @@ test('video analysis resets stale assessment selection to finger tapping', () =>
 test('login applies the authenticated user before opening the assessment', () => {
   assert.match(html, /const \{ data, error \} = await supa\.auth\.signInWithPassword/);
   assert.match(html, /currentUser = data\.user;\s*updateAuthUI\(\);\s*trackAnalytics\('login_completed'/);
+});
+
+test('Hawk I review creates an authenticated shared session before upload', () => {
+  assert.match(html, /supa\.auth\.getSession\(\)[\s\S]*access_token/);
+  assert.match(
+    html,
+    /buildActivitySessionRow\([\s\S]*\{ status: 'in_progress' \}[\s\S]*from\('activity_sessions'\)[\s\S]*upsert\(sessionRow, \{ onConflict: 'id' \}\)[\s\S]*HawkIClient\.submitVideo/,
+  );
+  assert.match(html, /HawkIClient\.submitVideo\(file, \{[\s\S]*assessmentContext,[\s\S]*accessToken,/);
 });
 
 test('saving waits for the consented Hawk I review to finish', () => {

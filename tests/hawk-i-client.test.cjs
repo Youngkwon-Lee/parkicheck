@@ -100,6 +100,7 @@ test('submitVideo sends a consented finger task and returns the completed result
       assessment_at: '2026-07-27T01:30:00.000Z',
       hours_before_assessment: 1.5,
     },
+    accessToken: 'supabase-access-token',
     fetchImpl: async (url, options = {}) => {
       calls.push({ url, options });
       return responses.shift();
@@ -127,12 +128,37 @@ test('submitVideo sends a consented finger task and returns the completed result
   });
   assert.equal(calls[0].options.body.get('physio_contract_version'), 'parkicheck-hawk-i/v1');
   assert.equal(calls[0].options.body.get('physio_activity_session_id'), 'assessment-123');
-  assert.equal(calls[0].options.body.get('physio_subject_person_id'), null);
-  assert.equal(calls[0].options.body.get('physio_organization_id'), null);
+  assert.equal(calls[0].options.body.get('physio_subject_person_id'), 'person-1');
+  assert.equal(calls[0].options.body.get('physio_organization_id'), 'org-1');
   assert.equal(calls[0].options.body.get('physio_created_by_person_id'), null);
   assert.equal(calls[0].options.body.get('physio_performer_person_id'), null);
   assert.equal(calls[0].options.body.get('physio_persistence_owner'), 'parkicheck');
+  assert.equal(calls[0].options.headers.Authorization, 'Bearer supabase-access-token');
+  assert.equal(calls[1].options.headers.Authorization, 'Bearer supabase-access-token');
+  assert.equal(calls[3].options.headers.Authorization, 'Bearer supabase-access-token');
   assert.deepEqual(statuses, ['uploading', 'analyzing', 'analyzing', 'completed']);
+});
+
+test('submitVideo fails closed before upload when patient context has no token', async () => {
+  let fetchCalled = false;
+  const video = new File(['video'], 'finger.mp4', { type: 'video/mp4' });
+
+  await assert.rejects(() => submitVideo(video, {
+    assessmentSessionId: 'assessment-123',
+    assessmentContext: {
+      assessment_session_id: 'assessment-123',
+      subject_person_id: 'person-1',
+      organization_id: 'org-1',
+      created_by_person_id: 'person-1',
+      performer_person_id: 'person-1',
+    },
+    fetchImpl: async () => {
+      fetchCalled = true;
+      return jsonResponse({});
+    },
+  }), /로그인이 필요/);
+
+  assert.equal(fetchCalled, false);
 });
 
 test('normalizeAssessmentContext rejects a mismatched cross-service session', () => {

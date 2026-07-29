@@ -2475,6 +2475,14 @@ async function startHawkIReview(file) {
   hawkIReviewController = new AbortController();
 
   try {
+    if (!currentUser) {
+      throw new Error('Hawk_I 연구 분석은 로그인 후 사용할 수 있습니다. 영상은 전송되지 않았습니다.');
+    }
+    const { data: authData, error: authError } = await supa.auth.getSession();
+    const accessToken = authData?.session?.access_token;
+    if (authError || !accessToken) {
+      throw new Error('로그인 세션을 확인하지 못했습니다. 다시 로그인해 주세요.');
+    }
     const assessmentSessionId = currentAssessmentSessionId || createAssessmentSessionId();
     currentAssessmentSessionId = assessmentSessionId;
     const patientId = `research-${assessmentSessionId}`;
@@ -2482,15 +2490,34 @@ async function startHawkIReview(file) {
     let assessmentContext = null;
     const { personId, orgId } = await bootstrapPersonalContext();
     if (personId && orgId && window.ParkiAssessmentSession) {
-      assessmentContext = window.ParkiAssessmentSession.buildAssessmentContext({
+      const assessmentPayload = {
         assessment_session_id: assessmentSessionId,
         medication_context: medicationContext,
-      }, {
+        mode: 'video',
+      };
+      const identity = {
         personId,
         organizationId: orgId,
         createdBy: personId,
         performerPersonId: personId,
-      });
+      };
+      assessmentContext = window.ParkiAssessmentSession.buildAssessmentContext(
+        assessmentPayload,
+        identity,
+      );
+      const sessionRow = window.ParkiAssessmentSession.buildActivitySessionRow(
+        assessmentPayload,
+        identity,
+        { status: 'in_progress' },
+      );
+      const { error: sessionError } = await supa
+        .from('activity_sessions')
+        .upsert(sessionRow, { onConflict: 'id' });
+      if (sessionError) {
+        throw new Error(`평가 세션 시작을 기록하지 못했습니다: ${sessionError.message}`);
+      }
+    } else {
+      throw new Error('환자 기록 연결을 준비하지 못했습니다. 영상은 전송되지 않았습니다.');
     }
     const previewCandidate = new URLSearchParams(window.location.search).get('hawk_i_base');
     const previewBaseUrl = window.HawkIClient.resolveAllowedPreviewBaseUrl(previewCandidate);
@@ -2502,6 +2529,7 @@ async function startHawkIReview(file) {
       patientId,
       medicationContext,
       assessmentContext,
+      accessToken,
       ...(previewBaseUrl ? {baseUrl: previewBaseUrl} : {}),
       ...(uploadBaseUrl ? {uploadBaseUrl} : {}),
       onStatus: ({phase}) => {
