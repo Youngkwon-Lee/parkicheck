@@ -44,6 +44,10 @@ test('video analysis resets stale assessment selection to finger tapping', () =>
   assert.match(html, /async function analyzeVideoFile\(file\) \{\s*testType = 'finger';/);
 });
 
+test('assessment selector exposes the video-analysis route above its blocking overlay', () => {
+  assert.match(html, /id="selectorVideoBtn"[\s\S]*onclick="setMode\('video'\)"/);
+});
+
 test('login applies the authenticated user before opening the assessment', () => {
   assert.match(html, /const \{ data, error \} = await supa\.auth\.signInWithPassword/);
   assert.match(html, /currentUser = data\.user;\s*updateAuthUI\(\);\s*trackAnalytics\('login_completed'/);
