@@ -2105,19 +2105,14 @@ const UPDRS_LABELS = ['NORMAL','MILD','MODERATE','SEVERE','MAX'];
 // Score the prescribed ten-tap protocol window. Additional taps are retained
 // as supplementary session metrics but must not change the clinical score.
 function scoreUPDRS(allTaps, sessionArrests, durationSec = 10) {
-  const isFingerProtocol = testType === 'finger';
-  const taps = isFingerProtocol && allTaps.length > PROTOCOL_TAPS
-    ? allTaps.slice(0, PROTOCOL_TAPS)
-    : allTaps;
+  const taps = allTaps.length > PROTOCOL_TAPS ? allTaps.slice(0, PROTOCOL_TAPS) : allTaps;
   const nTotal = allTaps.length;
-  const arrests = !isFingerProtocol || nTotal <= PROTOCOL_TAPS
+  const arrests = nTotal <= PROTOCOL_TAPS
     ? sessionArrests
     : taps.slice(1).filter((t, i) => t.t - taps[i].t > ARREST_THRESHOLD).length;
   const n = taps.length;
   const spanSec = n >= 2 ? (taps[n - 1].t - taps[0].t) / 1000 : 0;
-  const freq = isFingerProtocol
-    ? (spanSec > 0 ? (n - 1) / spanSec : 0)
-    : n / durationSec;
+  const freq = spanSec > 0 ? (n - 1) / spanSec : 0;
   let iti_cv = 0;
   if(n>=3){const ivs=taps.slice(1).map((t,i)=>t.t-taps[i].t),mean=ivs.reduce((a,b)=>a+b,0)/ivs.length,sd=Math.sqrt(ivs.map(x=>(x-mean)**2).reduce((a,b)=>a+b,0)/ivs.length);iti_cv=mean>0?(sd/mean)*100:0;}
   const maxAmp = n>0 ? Math.max(...taps.map(t=>t.amplitude)) : 0;
@@ -2130,24 +2125,16 @@ function scoreUPDRS(allTaps, sessionArrests, durationSec = 10) {
   let fatig = 0;
   if(n>=6){const avg=arr=>arr.reduce((a,t)=>a+t.amplitude,0)/arr.length,half=Math.floor(n/2);fatig=Math.max(0,(1-avg(taps.slice(-half))/avg(taps.slice(0,half)))*100);}
   const factors = {
-    freq  : clamp(isFingerProtocol
-      ? (freq>=4.0?0:freq>=3.0?1:freq>=2.0?2:freq>=1.0?3:4)
-      : (freq>=5.5?0:freq>=4.0?1:freq>=2.5?2:freq>=1.0?3:4)),
+    freq  : clamp(freq>=4.0?0:freq>=3.0?1:freq>=2.0?2:freq>=1.0?3:4),
     arrest: clamp(arrests===0?0:arrests<=2?1:arrests<=5?2:arrests<=8?3:4),
-    rhythm: clamp(n>=3
-      ? (isFingerProtocol
-        ? (iti_cv<20?0:iti_cv<35?1:iti_cv<50?2:iti_cv<70?3:4)
-        : (iti_cv<15?0:iti_cv<30?1:iti_cv<50?2:iti_cv<70?3:4))
-      : 0),
+    rhythm: clamp(n>=3?(iti_cv<20?0:iti_cv<35?1:iti_cv<50?2:iti_cv<70?3:4):0),
     // Normalized amplitude (ratio to hand size): 0.45=normal full open, 0.08=barely moving
     amp   : clamp(n>0?(meanAmp>=0.45?0:meanAmp>=0.30?1:meanAmp>=0.18?2:meanAmp>=0.08?3:4):0),
     fatig : clamp(n>=6?(fatig<10?0:fatig<25?1:fatig<45?2:fatig<65?3:4):0),
   };
   const raw = Object.entries(FACTOR_WEIGHTS).reduce((s,[k,w])=>s+factors[k]*w,0);
   const score = clamp(Math.round(raw));
-  const confidence = isFingerProtocol
-    ? (n>=PROTOCOL_TAPS?'HIGH':n>=6?'MEDIUM':'LOW')
-    : (n>=20?'HIGH':n>=10?'MEDIUM':'LOW');
+  const confidence = n>=PROTOCOL_TAPS?'HIGH':n>=6?'MEDIUM':'LOW';
   return {score, raw, factors, freq, arrests, iti_cv, fatig, maxAmp, meanAmp, n, nTotal, confidence};
 }
 
@@ -2192,7 +2179,7 @@ function showResults(durationSec = 10, title = 'UPDRS 3.4 — FINGER TAPPING') {
   el('updrsLabel').textContent = `UPDRS 3.4 — ${UPDRS_LABELS[score]}`;
   el('updrsDesc').textContent  = UPDRS_DESC[score];
   el('resTaps').textContent    = nTotal;
-  el('lblTaps').textContent    = testType === 'finger' && nTotal > n
+  el('lblTaps').textContent    = nTotal > n
     ? `TAPS / ${durationSec.toFixed(0)}s  (${n} SCORED)`
     : `TAPS / ${durationSec.toFixed(0)}s`;
   el('resFreq').textContent    = freq.toFixed(1);
@@ -2229,10 +2216,7 @@ function showResults(durationSec = 10, title = 'UPDRS 3.4 — FINGER TAPPING') {
   });
 
   const confC={HIGH:'#00ffcc',MEDIUM:'#ffff00',LOW:'#ff8800'};
-  const confidenceDetail = testType === 'finger'
-    ? `(MDS-UPDRS 3.4 · ${n} taps scored)`
-    : `(n=${n})`;
-  const ct=el('confidenceTag'); ct.textContent=`${confidence} CONFIDENCE  ${confidenceDetail}`; ct.style.color=confC[confidence]; ct.style.borderColor=confC[confidence];
+  const ct=el('confidenceTag'); ct.textContent=`${confidence} CONFIDENCE  (MDS-UPDRS 3.4 · ${n} taps scored)`; ct.style.color=confC[confidence]; ct.style.borderColor=confC[confidence];
   el('hawkIReview').classList.toggle('hidden-review', appMode !== 'video');
 
   el('resultsOverlay').classList.add('visible');
