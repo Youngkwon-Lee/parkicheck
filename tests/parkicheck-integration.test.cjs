@@ -93,11 +93,14 @@ test('saving waits for the consented Hawk I review to finish', () => {
 test('a consented live finger-tapping session stages the raw camera stream until save', () => {
   assert.match(html, /id="liveHawkIConsent"/);
   assert.match(html, /게임 이펙트·화면 UI는 녹화되지 않으며/);
+  assert.match(html, /이 브라우저에만 임시 보관합니다/);
+  assert.match(html, /‘저장 후 HAWK_I 분석’을 눌렀을 때에만 Hawk_I 연구 서버로 전송합니다/);
   assert.match(html, /testType === 'finger' && document\.getElementById\('liveHawkIConsent'\)\?\.checked/);
   assert.match(html, /new MediaRecorder\(stream/);
   assert.match(html, /if \(liveHawkIRecordingEnabled\) hawkIReviewPromise = finishLiveHawkIRecording\(\)/);
   assert.match(html, /stageHawkIReview\(file\)/);
   assert.match(html, /if \(pendingHawkIReview && !lastHawkIResult\)[\s\S]*startHawkIReview\(pendingReview\.file, pendingReview\.options\)/);
+  assert.match(html, /saveBtn\.textContent = pendingHawkIReview \? '💾 저장 후 HAWK_I 분석' : '💾 결과 저장';/);
   assert.match(html, /function discardStagedHawkIReview\(\)/);
   assert.match(html, /\$\('testRetryBtn'\)\.addEventListener\('click',\(\)=>\{\s*discardStagedHawkIReview\(\)/);
 });
