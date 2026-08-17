@@ -9,7 +9,12 @@
     root.HawkIClient = client;
   }
 })(typeof window !== 'undefined' ? window : globalThis, function createHawkIClient() {
-  const DEFAULT_BASE_URL = 'https://hawkeye-labeling-tool.vercel.app';
+  // The Vercel dashboard remains useful for viewing shared results, but its
+  // edge rewrite intermittently returns 502 for multipart video uploads.
+  // Route the bounded research-review flow straight to the authenticated
+  // Hawk_I Funnel instead; it is allow-listed below and CORS-restricted to
+  // the ParkiCheck origin.
+  const DEFAULT_BASE_URL = 'https://desktop-t43sn5m-1.tailde3b80.ts.net/hawkeye-api';
   const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
   const TIMELINE_CONTRACT_VERSION = 'parkicheck-hawk-i/v1';
 
@@ -125,7 +130,9 @@
     }
 
     if (!response.ok) {
-      throw new Error(payload?.error || fallbackMessage || `Hawk_I request failed (${response.status})`);
+      if (payload?.error) throw new Error(payload.error);
+      if (fallbackMessage) throw new Error(`${fallbackMessage} (HTTP ${response.status})`);
+      throw new Error(`Hawk_I request failed (${response.status})`);
     }
 
     return payload;
@@ -137,14 +144,28 @@
     if (file.type && !file.type.startsWith('video/')) throw new Error('영상 파일만 Hawk_I로 전송할 수 있습니다.');
   }
 
+  function normalizeTaskType(value) {
+    return value === 'gait' ? 'gait' : 'finger_tapping';
+  }
+
+  function authorizationHeaders(accessToken) {
+    if (typeof accessToken !== 'string' || !accessToken.trim()) return {};
+    return { Authorization: `Bearer ${accessToken.trim()}` };
+  }
+
   function summarizeResult(result) {
+    const method = result?.updrs_score?.method || result?.scoring_method || 'Hawk_I';
     const scoreValue = result?.updrs_score?.total_score ?? result?.updrs_score?.score;
     const score = scoreValue !== null && scoreValue !== undefined && scoreValue !== '' && Number.isFinite(Number(scoreValue))
       ? Number(scoreValue)
       : null;
     // The top-level confidence describes task classification, not score certainty.
     // Never present it as clinical-score confidence.
-    const confidenceValue = result?.updrs_score?.confidence;
+    // Rule fallback certainty reflects that the rule ran, not clinical-score
+    // certainty. Only present an ordinal-model confidence when CORAL is live.
+    const confidenceValue = String(method).toLowerCase() === 'coral'
+      ? result?.updrs_score?.confidence
+      : null;
     const confidence = confidenceValue !== null && confidenceValue !== undefined && confidenceValue !== '' && Number.isFinite(Number(confidenceValue))
       ? Math.max(0, Math.min(1, Number(confidenceValue)))
       : null;
@@ -153,12 +174,14 @@
       score,
       confidence,
       severity: result?.updrs_score?.severity || '검토 필요',
-      method: result?.updrs_score?.method || result?.scoring_method || 'Hawk_I',
+      method,
       performability: result?.performability_assessment?.status || 'not_reported',
       advisoryLevel: result?.score_advisory?.level || 'review_recommended',
       advisory:
         result?.score_advisory?.summary ||
-        '자동 분석 결과는 연구 보조 관측치이며 담당자의 검토가 필요합니다.',
+        (String(method).toLowerCase() === 'rule'
+          ? '현재 규칙 기반 연구 보조 신호입니다. C3 연구 모델 결과가 아니며 담당자의 검토가 필요합니다.'
+          : '자동 분석 결과는 연구 보조 관측치이며 담당자의 검토가 필요합니다.'),
       videoType: result?.video_type || 'finger_tapping',
     };
   }
@@ -174,10 +197,11 @@
     const maxPolls = options.maxPolls ?? 240;
     const onStatus = options.onStatus || (() => {});
     const signal = options.signal;
+    const requestHeaders = authorizationHeaders(options.accessToken);
     const formData = new FormData();
 
     formData.append('video_file', file, file.name || 'parkicheck-video.webm');
-    formData.append('test_type', 'finger_tapping');
+    formData.append('test_type', normalizeTaskType(options.testType));
     formData.append('scoring_method', 'coral');
     if (options.assessmentSessionId) {
       formData.append('assessment_session_id', options.assessmentSessionId);
@@ -193,11 +217,13 @@
       options.assessmentSessionId,
     );
     if (assessmentContext) {
-      // Hawk I only receives the opaque session contract. Person/org IDs stay
-      // inside ParkiCheck's authenticated Supabase write boundary.
+      // Hawk I verifies these IDs against the caller's authenticated ParkiCheck
+      // session before it accepts the video. They are not trusted as supplied.
       formData.append('physio_contract_version', assessmentContext.contract_version);
       formData.append('physio_activity_session_id', assessmentContext.assessment_session_id);
       formData.append('physio_persistence_owner', assessmentContext.persistence_owner);
+      formData.append('physio_subject_person_id', assessmentContext.subject_person_id);
+      formData.append('physio_organization_id', assessmentContext.organization_id);
     }
     const medicationContext = normalizeMedicationContext(options.medicationContext);
     if (medicationContext) {
@@ -209,6 +235,7 @@
       method: 'POST',
       body: formData,
       signal,
+      headers: requestHeaders,
     });
     const started = await readJson(startResponse, 'Hawk_I 영상 업로드에 실패했습니다.');
 
@@ -221,14 +248,14 @@
 
       const progressResponse = await fetchImpl(
         `${baseUrl}/api/analysis/progress/${encodeURIComponent(started.id)}`,
-        { signal },
+        { signal, headers: requestHeaders },
       );
       const progress = await readJson(progressResponse, 'Hawk_I 진행 상태를 확인하지 못했습니다.');
 
       if (progress.status === 'completed') {
         const resultResponse = await fetchImpl(
           `${baseUrl}/api/analysis/result/${encodeURIComponent(started.id)}`,
-          { signal },
+          { signal, headers: requestHeaders },
         );
         const result = await readJson(resultResponse, 'Hawk_I 결과를 불러오지 못했습니다.');
         onStatus({ phase: 'completed', id: started.id, result });
@@ -252,6 +279,7 @@
     TIMELINE_CONTRACT_VERSION,
     normalizeAssessmentContext,
     normalizeMedicationContext,
+    normalizeTaskType,
     resolveAllowedPreviewBaseUrl,
     resolveAllowedUploadBaseUrl,
     submitVideo,

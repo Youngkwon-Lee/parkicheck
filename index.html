@@ -604,6 +604,13 @@
       <div class="ov-h2">UPDRS 3.4</div>
       <div class="ov-sub">FINGER TAPPING TEST</div>
       <p class="ov-p">검지를 엄지에 최대한 <strong style="color:#fff">빠르고 넓게</strong> 탭하세요.<br>10초간 측정합니다.<br><br>손을 카메라에 잘 보이게 위치시킨 후<br>준비되면 시작 버튼을 누르세요.</p>
+      <label class="hawk-consent" id="liveHawkIConsentRow" for="liveHawkIConsent">
+        <input type="checkbox" id="liveHawkIConsent">
+        <span>
+          <strong>원본 영상 녹화 후 HAWK_I 연구 분석 연결</strong>
+          <span>검사 중 카메라 원본 영상을 짧게 녹화해 종료 후 Hawk_I 연구 서버로 전송합니다. 게임 이펙트·화면 UI는 녹화되지 않으며, 동의하지 않으면 ParkiCheck 기기 내 분석만 수행합니다.</span>
+        </span>
+      </label>
       <button class="btn-primary" id="testStartBtn">START TEST</button>
     </div>
   </div>
@@ -750,17 +757,88 @@ let currentAssessmentSessionId = null;
 let currentAssessmentMedicationContext = null;
 let hawkIReviewPromise = null;
 let lastHawkIResult = null;
+let liveHawkIRecorder = null;
+let liveHawkIChunks = [];
+let liveHawkIRecordingEnabled = false;
+let liveHawkIRecordingError = null;
 let serverMedicationLogs = [];
 let medicationServerLoaded = false;
 
 let _personId = null; // cached persons.id for current auth user
-let _orgId    = null; // cached organization_id (personal solo org) for current auth user
+let _orgId    = null; // cached organization_id for the active Hawk I workspace
+
+// Public workspace identifier only (never a credential). ParkiCheck writes to
+// this shared workspace when the signed-in person is an active client/member;
+// otherwise it keeps the personal workspace fallback used by standalone use.
+const HAWK_I_SHARED_ORGANIZATION_ID = '13d483d9-b785-41d4-8eb8-fc0b55d48c86';
+
+async function resolveHawkISharedOrganization(personId) {
+  if (!supa || !personId) return null;
+  try {
+    const [membershipResult, clientResult] = await Promise.all([
+      supa
+        .from('organization_members')
+        .select('organization_id,role,status')
+        .eq('organization_id', HAWK_I_SHARED_ORGANIZATION_ID)
+        .eq('person_id', personId)
+        .eq('status', 'active')
+        .in('role', ['owner', 'admin', 'provider', 'staff'])
+        .limit(1),
+      supa
+        .from('org_clients')
+        .select('organization_id,status')
+        .eq('organization_id', HAWK_I_SHARED_ORGANIZATION_ID)
+        .eq('person_id', personId)
+        .eq('status', 'active')
+        .limit(1),
+    ]);
+    if (!membershipResult.error && membershipResult.data?.[0]?.organization_id) {
+      return membershipResult.data[0].organization_id;
+    }
+    if (!clientResult.error && clientResult.data?.[0]?.organization_id) {
+      return clientResult.data[0].organization_id;
+    }
+  } catch (e) {
+    // A missing optional workspace membership must not block standalone use.
+  }
+  return null;
+}
 
 // Idempotent — creates persons + personal org if needed.
 async function bootstrapPersonalContext() {
   if (_personId && _orgId) return { personId: _personId, orgId: _orgId };
   if (!supa || !currentUser) return { personId: null, orgId: null };
   try {
+    // Prefer the signed-in user's already-created identity. This avoids
+    // re-running the bootstrap RPC whenever history or a result is opened.
+    const { data: people, error: peopleError } = await supa
+      .from('persons')
+      .select('id')
+      .eq('auth_user_id', currentUser.id)
+      .limit(1);
+    const existingPerson = !peopleError ? people?.[0] : null;
+    if (existingPerson?.id) {
+      const sharedOrganizationId = await resolveHawkISharedOrganization(existingPerson.id);
+      if (sharedOrganizationId) {
+        _personId = existingPerson.id;
+        _orgId = sharedOrganizationId;
+        return { personId: _personId, orgId: _orgId };
+      }
+
+      const { data: memberships, error: membershipError } = await supa
+        .from('organization_members')
+        .select('organization_id')
+        .eq('person_id', existingPerson.id)
+        .eq('status', 'active')
+        .limit(1);
+      const existingMembership = !membershipError ? memberships?.[0] : null;
+      if (existingMembership?.organization_id) {
+        _personId = existingPerson.id;
+        _orgId = existingMembership.organization_id;
+        return { personId: _personId, orgId: _orgId };
+      }
+    }
+
     const { data: rpc } = await supa.rpc('bootstrap_consumer_app_user', {
       p_first_name: (currentUser.email || '').split('@')[0] || null,
       p_email:      currentUser.email || null,
@@ -768,7 +846,7 @@ async function bootstrapPersonalContext() {
     });
     if (rpc && !rpc.error) {
       _personId = rpc.person_id;
-      _orgId    = rpc.org_id;
+      _orgId    = await resolveHawkISharedOrganization(_personId) || rpc.org_id;
       return { personId: _personId, orgId: _orgId };
     }
   } catch(e) { /* bootstrap RPC not yet deployed — skip */ }
@@ -1091,50 +1169,87 @@ async function handleSaveResult() {
 // ── History / Chart / Med Log ────────────────
 let histResults = [], histMedLogs = [], activeHistFilter = null;
 
+function withTimeout(promise, timeoutMs, message) {
+  let timeoutId;
+  const timeout = new Promise((_, reject) => {
+    timeoutId = window.setTimeout(() => reject(new Error(message)), timeoutMs);
+  });
+  return Promise.race([promise, timeout]).finally(() => window.clearTimeout(timeoutId));
+}
+
+async function resolveHistoryPersonId() {
+  if (_personId) return _personId;
+  if (!currentUser) return null;
+
+  const { data, error } = await withTimeout(
+    supa
+      .from('persons')
+      .select('id')
+      .eq('auth_user_id', currentUser.id)
+      .limit(1),
+    6000,
+    '개인 기록 연결 시간이 초과되었습니다.',
+  );
+  if (error) throw error;
+  const personId = data?.[0]?.id || null;
+  if (personId) _personId = personId;
+  return personId;
+}
+
 async function showHistory() {
   document.getElementById('profileMenu').classList.remove('open');
   document.getElementById('historyOverlay').classList.remove('hidden');
   switchHistTab('chart');
   if(!currentUser) return;
 
-  const { personId } = await bootstrapPersonalContext();
-  let rawData;
+  try {
+    const personId = await resolveHistoryPersonId();
+    let rawData;
 
-  if (personId) {
-    const { data } = await supa
-      .from('observations')
-      .select('effective_datetime,value_integer,measurement_context')
-      .eq('code', 'UPDRS_3_4')
-      .eq('subject_person_id', personId)
-      .order('effective_datetime', { ascending: true })
-      .limit(200);
-    rawData = (data || []).map(r => ({
-      tested_at:   r.effective_datetime,
-      score:       r.value_integer,
-      mode:        r.measurement_context?.mode,
-      n_taps:      r.measurement_context?.n_taps,
-      frequency:   r.measurement_context?.frequency,
-      fatigability: r.measurement_context?.fatigability,
-      confidence:  r.measurement_context?.confidence,
-      factors:     r.measurement_context?.factors,
-      medication_context: r.measurement_context?.medication_context,
-      assessment_session_id: r.measurement_context?.assessment_session_id,
-      hawk_i:      r.measurement_context?.hawk_i,
-    }));
-  } else {
-    const { data } = await supa
-      .from('updrs_results')
-      .select('tested_at,mode,score,n_taps,frequency,fatigability,confidence,factors')
-      .order('tested_at', { ascending: true })
-      .limit(200);
-    rawData = data || [];
+    if (personId) {
+      const { data, error } = await supa
+        .from('observations')
+        .select('effective_datetime,value_integer,value_quantity,measurement_context')
+        .in('code', ['UPDRS_3_4', 'UPDRS_3_9'])
+        .eq('subject_person_id', personId)
+        .order('effective_datetime', { ascending: true })
+        .limit(200);
+      if (error) throw error;
+      rawData = (data || []).map(r => ({
+        tested_at:   r.effective_datetime,
+        score:       r.value_integer ?? r.value_quantity,
+        mode:        r.measurement_context?.mode,
+        n_taps:      r.measurement_context?.n_taps,
+        frequency:   r.measurement_context?.frequency,
+        fatigability: r.measurement_context?.fatigability,
+        confidence:  r.measurement_context?.confidence,
+        factors:     r.measurement_context?.factors,
+        medication_context: r.measurement_context?.medication_context,
+        assessment_session_id: r.measurement_context?.assessment_session_id,
+        hawk_i:      r.measurement_context?.hawk_i,
+      }));
+    } else {
+      const { data, error } = await supa
+        .from('updrs_results')
+        .select('tested_at,mode,score,n_taps,frequency,fatigability,confidence,factors')
+        .order('tested_at', { ascending: true })
+        .limit(200);
+      if (error) throw error;
+      rawData = data || [];
+    }
+
+    histResults = rawData;
+    if (personId) await refreshServerMedicationLogs(personId);
+    histMedLogs = getMedLogs();
+    renderMedicationComparison();
+    renderHistList();
+    setTimeout(refreshHistChart, 60);
+  } catch (error) {
+    histResults = [];
+    histMedLogs = getMedLogs();
+    document.getElementById('historyList').innerHTML = `<div class="hist-empty">기록을 불러오지 못했습니다: ${error.message}</div>`;
+    console.warn('Assessment history load failed:', error);
   }
-
-  histResults = rawData;
-  if (personId) await refreshServerMedicationLogs(personId);
-  histMedLogs = getMedLogs();
-  renderMedicationComparison();
-  setTimeout(refreshHistChart, 60);
 }
 
 function switchHistTab(tab) {
@@ -2020,6 +2135,9 @@ function showResults(durationSec = 10, title = 'UPDRS 3.4 — FINGER TAPPING') {
   const color = UPDRS_COLORS[score];
   const el = s => document.getElementById(s);
 
+  el('ampChartWrap').style.display = '';
+  el('factorBreakdown').style.display = '';
+
   el('resultsTitleH2').textContent = title;
   el('updrsScore').textContent = score;
   el('updrsScore').style.color = color;
@@ -2092,6 +2210,47 @@ function showResults(durationSec = 10, title = 'UPDRS 3.4 — FINGER TAPPING') {
   saveMsg.textContent = ''; saveMsg.style.color = '';
   if (!currentUser) saveMsg.textContent = '로그인하면 기록이 저장됩니다';
   onSeqTestComplete(score);
+}
+
+function showVideoGaitResearchResult(file, durationSec) {
+  const el = s => document.getElementById(s);
+  el('resultsTitleH2').textContent = `UPDRS 3.9 — GAIT · ${file.name.split('.')[0]}`;
+  el('updrsScore').textContent = '—';
+  el('updrsScore').style.color = '#00ffcc';
+  el('updrsScore').style.textShadow = '0 0 50px #00ffcc';
+  el('updrsLabel').textContent = 'HAWK_I RESEARCH REVIEW';
+  el('updrsDesc').textContent = 'ParkiCheck의 손가락 탭 로컬 점수는 보행 영상에 적용하지 않습니다. 아래 Hawk_I 연구 보조 관측치를 담당자가 검토합니다.';
+  el('resTaps').textContent = '—';
+  el('lblTaps').textContent = 'LOCAL GAIT SCORE';
+  el('resFreq').textContent = '—';
+  el('resArrests').textContent = '—';
+  el('resITI').textContent = '—';
+  el('resMaxAmp').textContent = '—';
+  el('resFatig').textContent = '—';
+  el('ampChartWrap').style.display = 'none';
+  el('factorBreakdown').style.display = 'none';
+  const ct = el('confidenceTag');
+  ct.textContent = 'RESEARCH REVIEW · NO LOCAL GAIT SCORE';
+  ct.style.color = '#00ffcc';
+  ct.style.borderColor = '#00ffcc';
+  el('hawkIReview').classList.remove('hidden-review');
+  el('resultsOverlay').classList.add('visible');
+
+  setLastResultPayload({
+    assessment_session_id: currentAssessmentSessionId || createAssessmentSessionId(),
+    medication_context: currentAssessmentMedicationContext || getMedicationContext(new Date()),
+    hawk_i: lastHawkIResult ? normalizedHawkIResult(lastHawkIResult) : null,
+    mode: 'video', score: null, raw_score: null,
+    n_taps: null, frequency: null, arrests: null, iti_cv: null,
+    max_amplitude: null, fatigability: null, confidence: 'NOT_REPORTED',
+    duration_sec: parseFloat(durationSec.toFixed(1)),
+    factors: { test_type: 'gait', local_scoring: 'not_available' },
+  });
+  const saveBtn = el('saveResultBtn');
+  const saveMsg = el('saveResultMsg');
+  saveBtn.style.display = ''; saveBtn.disabled = false;
+  saveMsg.textContent = ''; saveMsg.style.color = '';
+  if (!currentUser) saveMsg.textContent = '로그인하면 기록이 저장됩니다';
 }
 
 // ═══════════════════════════════════════════
@@ -2349,6 +2508,7 @@ function selectAssessment(type) {
   document.getElementById('timerText').textContent = durSec;
 
   const ol = document.getElementById('updrsTestOverlay');
+  document.getElementById('liveHawkIConsentRow').style.display = type === 'finger' ? '' : 'none';
   ol.querySelector('.ov-h2').textContent = `UPDRS ${m.num}`;
   ol.querySelector('.ov-sub').textContent = m.name;
   ol.querySelector('.ov-p').innerHTML = m.desc.replace(/\n/g,'<br>');
@@ -2380,6 +2540,7 @@ function startTest() {
     test_label: meta?.name || testType || 'unknown',
     signed_in: !!currentUser,
   });
+  prepareLiveHawkIRecording();
   if(testType==='tremor'||testType==='actiontremor'){ tremorBuffer.length=0; tremorLiveFreq=0; }
   // Reset pose baselines for fresh test
   if(testType==='toe'||testType==='leg'){
@@ -2410,6 +2571,7 @@ function endTest() {
   if(testState!=='running') return;
   testState='done';
   document.getElementById('testHud').classList.remove('visible');
+  if (liveHawkIRecordingEnabled) hawkIReviewPromise = finishLiveHawkIRecording();
   if(testType==='tremor'||testType==='actiontremor'){ showTremorResults(); return; }
   if(testType==='posture'){ showPostureResults(); return; }
   if(testType==='gait'){ showGaitResults(); return; }
@@ -2476,7 +2638,40 @@ function renderHawkIResult(result) {
   }
 }
 
-async function startHawkIReview(file) {
+async function reserveHawkIActivitySession({ assessmentSessionId, personId, orgId, medicationContext, testType }) {
+  const isGait = testType === 'gait';
+  const sessionRow = {
+    id: assessmentSessionId,
+    subject_person_id: personId,
+    organization_id: orgId,
+    created_by: personId,
+    activity_type: 'assessment',
+    source: 'camera',
+    status: 'in_progress',
+    performed_at: medicationContext?.assessment_at || new Date().toISOString(),
+    metrics: {
+      contract_version: 'parkicheck-hawk-i/v1',
+      app_source: 'parkicheck',
+      assessment_session_id: assessmentSessionId,
+      medication_context: medicationContext || null,
+      parkicheck: { mode: 'video', test_type: isGait ? 'gait' : 'finger' },
+      hawk_i: null,
+    },
+    exercise_log: {
+      task_code: isGait ? 'UPDRS_3_9' : 'UPDRS_3_4',
+      task_display: isGait
+        ? 'UPDRS Part III Item 3.9 - Gait'
+        : 'UPDRS Part III Item 3.4 - Finger Tapping',
+    },
+    notes: 'ParkiCheck research review in progress',
+  };
+  const { error } = await supa
+    .from('activity_sessions')
+    .upsert(sessionRow, { onConflict: 'id' });
+  if (error) throw new Error(`Hawk_I 분석 세션을 준비하지 못했습니다: ${error.message}`);
+}
+
+async function startHawkIReview(file, options = {}) {
   if (!window.HawkIClient) {
     setHawkIReviewState('error', 'UNAVAILABLE', 'Hawk_I 연결 모듈을 불러오지 못했습니다.');
     return null;
@@ -2503,6 +2698,22 @@ async function startHawkIReview(file) {
         performerPersonId: personId,
       });
     }
+    const reviewTestType = options.testType === 'gait' ? 'gait' : 'finger';
+    if (!assessmentContext) {
+      throw new Error('Hawk_I 연구 분석 연결은 로그인 후 이용할 수 있습니다.');
+    }
+    await reserveHawkIActivitySession({
+      assessmentSessionId,
+      personId,
+      orgId,
+      medicationContext,
+      testType: reviewTestType,
+    });
+    const { data: sessionData } = await supa.auth.getSession();
+    const accessToken = sessionData?.session?.access_token || null;
+    if (!accessToken) {
+      throw new Error('Hawk_I 연구 분석 연결은 로그인 후 이용할 수 있습니다.');
+    }
     const previewCandidate = new URLSearchParams(window.location.search).get('hawk_i_base');
     const previewBaseUrl = window.HawkIClient.resolveAllowedPreviewBaseUrl(previewCandidate);
     const uploadCandidate = new URLSearchParams(window.location.search).get('hawk_i_upload_base');
@@ -2513,6 +2724,8 @@ async function startHawkIReview(file) {
       patientId,
       medicationContext,
       assessmentContext,
+      accessToken,
+      testType: reviewTestType === 'gait' ? 'gait' : 'finger_tapping',
       ...(previewBaseUrl ? {baseUrl: previewBaseUrl} : {}),
       ...(uploadBaseUrl ? {uploadBaseUrl} : {}),
       onStatus: ({phase}) => {
@@ -2526,22 +2739,109 @@ async function startHawkIReview(file) {
       lastResultPayload.hawk_i = normalizedHawkIResult(result);
     }
     renderHawkIResult(result);
-    trackAnalytics('hawk_i_review_completed', { test_type:'finger', signed_in:!!currentUser });
+    trackAnalytics('hawk_i_review_completed', { test_type: reviewTestType, signed_in:!!currentUser });
     return result;
   } catch(error) {
     if (error?.name === 'AbortError') return null;
     setHawkIReviewState('error', 'REVIEW FAILED', error?.message || 'Hawk_I 분석을 완료하지 못했습니다.');
-    trackAnalytics('hawk_i_review_failed', { test_type:'finger', signed_in:!!currentUser });
+    trackAnalytics('hawk_i_review_failed', { test_type: options.testType === 'gait' ? 'gait' : 'finger', signed_in:!!currentUser });
     return null;
   }
 }
 
+function preferredLiveRecordingMimeType() {
+  if (!window.MediaRecorder || typeof MediaRecorder.isTypeSupported !== 'function') return '';
+  return [
+    'video/webm;codecs=vp9',
+    'video/webm;codecs=vp8',
+    'video/webm',
+  ].find((mimeType) => MediaRecorder.isTypeSupported(mimeType)) || '';
+}
+
+function prepareLiveHawkIRecording() {
+  liveHawkIRecorder = null;
+  liveHawkIChunks = [];
+  liveHawkIRecordingEnabled = false;
+  liveHawkIRecordingError = null;
+
+  const consented = testType === 'finger' && document.getElementById('liveHawkIConsent')?.checked;
+  if (!consented) return;
+
+  currentAssessmentSessionId = createAssessmentSessionId();
+  currentAssessmentMedicationContext = getMedicationContext(new Date());
+  lastHawkIResult = null;
+
+  const stream = video?.srcObject;
+  if (!stream || !window.MediaRecorder) {
+    liveHawkIRecordingError = '이 브라우저에서는 원본 영상 녹화를 지원하지 않습니다.';
+    setHawkIReviewState('error', 'UNAVAILABLE', liveHawkIRecordingError);
+    return;
+  }
+
+  try {
+    const mimeType = preferredLiveRecordingMimeType();
+    liveHawkIRecorder = mimeType
+      ? new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 2_500_000 })
+      : new MediaRecorder(stream);
+    liveHawkIRecorder.addEventListener('dataavailable', (event) => {
+      if (event.data?.size) liveHawkIChunks.push(event.data);
+    });
+    liveHawkIRecorder.addEventListener('error', (event) => {
+      liveHawkIRecordingError = event?.error?.message || '원본 영상 녹화 중 오류가 발생했습니다.';
+    });
+    liveHawkIRecorder.start(250);
+    liveHawkIRecordingEnabled = true;
+    prepareHawkIReview(true);
+    setHawkIReviewState('working', 'RECORDING', '원본 카메라 영상을 녹화 중입니다. 검사 종료 후 Hawk_I 연구 분석을 시작합니다.');
+    trackAnalytics('hawk_i_live_capture_started', { test_type: 'finger', signed_in: !!currentUser });
+  } catch (error) {
+    liveHawkIRecordingError = error?.message || '원본 영상 녹화를 시작하지 못했습니다.';
+    setHawkIReviewState('error', 'UNAVAILABLE', liveHawkIRecordingError);
+  }
+}
+
+function finishLiveHawkIRecording() {
+  const recorder = liveHawkIRecorder;
+  liveHawkIRecordingEnabled = false;
+  liveHawkIRecorder = null;
+
+  if (!recorder || recorder.state === 'inactive') {
+    const message = liveHawkIRecordingError || '원본 영상이 생성되지 않아 Hawk_I 분석을 시작하지 못했습니다.';
+    setHawkIReviewState('error', 'UNAVAILABLE', message);
+    return Promise.resolve(null);
+  }
+
+  return new Promise((resolve) => {
+    recorder.addEventListener('stop', () => {
+      if (liveHawkIRecordingError || liveHawkIChunks.length === 0) {
+        const message = liveHawkIRecordingError || '원본 영상이 비어 있어 Hawk_I 분석을 시작하지 못했습니다.';
+        setHawkIReviewState('error', 'UNAVAILABLE', message);
+        resolve(null);
+        return;
+      }
+      const type = recorder.mimeType || 'video/webm';
+      const blob = new Blob(liveHawkIChunks, { type });
+      liveHawkIChunks = [];
+      const extension = type.includes('mp4') ? 'mp4' : 'webm';
+      const file = new File([blob], `parkicheck-live-finger-${Date.now()}.${extension}`, { type });
+      resolve(file);
+    }, { once: true });
+    recorder.stop();
+  }).then(async (file) => {
+    if (!file) return null;
+    setHawkIReviewState('working', 'UPLOADING', '녹화한 원본 영상을 Hawk_I 연구 서버로 전송하고 있습니다.');
+    trackAnalytics('hawk_i_live_capture_completed', { test_type: 'finger', video_bytes: file.size, signed_in: !!currentUser });
+    return startHawkIReview(file);
+  });
+}
+
 async function analyzeVideoFile(file) {
-  testType = 'finger';
+  const videoTestType = testType === 'gait' ? 'gait' : 'finger';
+  testType = videoTestType;
   trackAnalytics('assessment_started', {
     assessment_mode: 'video',
-    test_type: 'finger',
-    test_label: 'FINGER TAPPING',
+    test_type: videoTestType,
+    test_label: videoTestType === 'gait' ? 'GAIT' : 'FINGER TAPPING',
     signed_in: !!currentUser,
   });
   if (hawkIReviewController) {
@@ -2554,7 +2854,7 @@ async function analyzeVideoFile(file) {
   hawkIReviewPromise = null;
   const hawkIEnabled = document.getElementById('hawkIConsent').checked;
   prepareHawkIReview(hawkIEnabled);
-  if (hawkIEnabled) hawkIReviewPromise = startHawkIReview(file);
+  if (hawkIEnabled) hawkIReviewPromise = startHawkIReview(file, { testType: videoTestType });
   // Reset
   Object.assign(testData,{taps:[],arrests:0,startTime:0,lastTapT:0,currentMaxDist:0});
   const keys = Object.keys(prevTap).filter(k=>k.startsWith('vid-'));
@@ -2607,21 +2907,23 @@ async function analyzeVideoFile(file) {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(videoEl, vLB.x, vLB.y, vLB.w, vLB.h);
 
-    // Process through MediaPipe and wait for result
-    await new Promise(resolve=>{
-      pendingResolve = resolve;
-      hands.send({image:videoEl});
-    });
+    if (videoTestType !== 'gait') {
+      // Process through MediaPipe and wait for result
+      await new Promise(resolve=>{
+        pendingResolve = resolve;
+        hands.send({image:videoEl});
+      });
 
-    // Tap detection with video timestamp
-    if(handResults && handResults.multiHandLandmarks) {
-      handResults.multiHandLandmarks.forEach((lm,hi)=>detectTapsVideo(lm,hi,t*1000));
-    }
+      // Tap detection with video timestamp
+      if(handResults && handResults.multiHandLandmarks) {
+        handResults.multiHandLandmarks.forEach((lm,hi)=>detectTapsVideo(lm,hi,t*1000));
+      }
 
-    // Draw hand skeleton overlay (no mirror, letterbox coords)
-    if(handResults && handResults.multiHandLandmarks) {
-      const vOpts = { ox:vLB.x, oy:vLB.y, sw:vLB.w, sh:vLB.h, mirror:false };
-      handResults.multiHandLandmarks.forEach((lm)=>drawHand(lm,[false,false,false,false],vOpts));
+      // Draw hand skeleton overlay (no mirror, letterbox coords)
+      if(handResults && handResults.multiHandLandmarks) {
+        const vOpts = { ox:vLB.x, oy:vLB.y, sw:vLB.w, sh:vLB.h, mirror:false };
+        handResults.multiHandLandmarks.forEach((lm)=>drawHand(lm,[false,false,false,false],vOpts));
+      }
     }
 
     // Render effects on this frame
@@ -2647,7 +2949,11 @@ async function analyzeVideoFile(file) {
   URL.revokeObjectURL(url);
   document.getElementById('video').style.visibility = ''; // restore live camera
   document.getElementById('videoProgressOverlay').classList.add('hidden');
-  showResults(duration, `VIDEO ANALYSIS — ${file.name.split('.')[0]}`);
+  if (videoTestType === 'gait') {
+    showVideoGaitResearchResult(file, duration);
+  } else {
+    showResults(duration, `VIDEO ANALYSIS — ${file.name.split('.')[0]}`);
+  }
 }
 
 function detectTapsVideo(landmarks, handIdx, timestampMs) {
@@ -3618,6 +3924,53 @@ function drawFaceMesh(lm) {
 // ═══════════════════════════════════════════
 // HAND SKELETON
 // ═══════════════════════════════════════════
+function drawFingerTapCharge(landmarks, activeFingers, lx, ly) {
+  // This is deliberately visual-only. The clinical tap count still uses
+  // TAP_THRESH in detectTaps(), while this makes the approach to a tap legible.
+  if (testType !== 'finger' || appMode === 'video') return;
+
+  const thumb = landmarks[THUMB_TIP];
+  const index = landmarks[FINGER_TIPS[0]];
+  if (!thumb || !index) return;
+
+  const dx = thumb.x - index.x;
+  const dy = thumb.y - index.y;
+  const distance = Math.hypot(dx, dy);
+  const visualThreshold = 0.145;
+  if (distance >= visualThreshold) return;
+
+  const closeness = Math.min(1, Math.max(0, (visualThreshold - distance) / (visualThreshold - TAP_THRESH)));
+  const tx = lx(thumb), ty = ly(thumb), ix = lx(index), iy = ly(index);
+  const midX = (tx + ix) / 2, midY = (ty + iy) / 2;
+  const confirmed = Boolean(activeFingers[0]);
+  const color = FINGER_COLORS[0];
+
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = color;
+  ctx.globalAlpha = 0.16 + closeness * 0.48;
+  ctx.lineWidth = 2 + closeness * 6;
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 8 + closeness * 22;
+  ctx.beginPath();
+  ctx.moveTo(tx, ty);
+  ctx.lineTo(ix, iy);
+  ctx.stroke();
+
+  const radius = 8 + closeness * (confirmed ? 36 : 24);
+  const gradient = ctx.createRadialGradient(midX, midY, 0, midX, midY, radius);
+  gradient.addColorStop(0, confirmed ? 'rgba(255,255,255,0.92)' : 'rgba(0,255,204,0.72)');
+  gradient.addColorStop(0.34, `rgba(0,255,204,${0.36 + closeness * 0.34})`);
+  gradient.addColorStop(1, 'rgba(0,255,204,0)');
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = gradient;
+  ctx.beginPath();
+  ctx.arc(midX, midY, radius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
 function drawHand(landmarks, activeFingers, opts = {}) {
   const W = canvas.width, H = canvas.height;
   const { ox=0, oy=0, sw=W, sh=H, mirror=true } = opts;
@@ -3626,6 +3979,7 @@ function drawHand(landmarks, activeFingers, opts = {}) {
   ctx.save(); ctx.strokeStyle='rgba(255,255,255,0.18)'; ctx.lineWidth=1.5;
   CONNECTIONS.forEach(([a,b])=>{const pa=landmarks[a],pb=landmarks[b];ctx.beginPath();ctx.moveTo(lx(pa),ly(pa));ctx.lineTo(lx(pb),ly(pb));ctx.stroke();});
   ctx.restore();
+  drawFingerTapCharge(landmarks, activeFingers, lx, ly);
   landmarks.forEach((lm,i)=>{
     const x=lx(lm), y=ly(lm), fi=FINGER_TIPS.indexOf(i);
     ctx.save();

@@ -51,6 +51,15 @@ test('summarizeResult reads the Hawk I total_score contract', () => {
   assert.equal(summary.confidence, 0.72);
 });
 
+test('summarizeResult does not misstate rule-fallback execution as score confidence', () => {
+  const summary = summarizeResult({
+    scoring_method: 'rule',
+    updrs_score: { total_score: 0.4, method: 'rule', confidence: 1 },
+  });
+  assert.equal(summary.confidence, null);
+  assert.match(summary.advisory, /C3 연구 모델 결과가 아니/);
+});
+
 test('summarizeResult keeps a completed analysis without a score in manual review', () => {
   const summary = summarizeResult({
     success: true,
@@ -114,6 +123,7 @@ test('submitVideo sends a consented finger task and returns the completed result
   assert.equal(calls[0].url, 'https://upload.hawk.example/direct/api/analyze');
   assert.equal(calls[1].url, 'https://hawk.example/api/analysis/progress/review-123');
   assert.equal(calls[0].options.body.get('test_type'), 'finger_tapping');
+  assert.equal(calls[0].options.headers.Authorization, undefined);
   assert.equal(calls[0].options.body.get('scoring_method'), 'coral');
   assert.equal(calls[0].options.body.get('assessment_session_id'), 'assessment-123');
   assert.equal(calls[0].options.body.get('physio_activity_session_id'), 'assessment-123');
@@ -131,12 +141,41 @@ test('submitVideo sends a consented finger task and returns the completed result
   });
   assert.equal(calls[0].options.body.get('physio_contract_version'), 'parkicheck-hawk-i/v1');
   assert.equal(calls[0].options.body.get('physio_activity_session_id'), 'assessment-123');
-  assert.equal(calls[0].options.body.get('physio_subject_person_id'), null);
-  assert.equal(calls[0].options.body.get('physio_organization_id'), null);
+  assert.equal(calls[0].options.body.get('physio_subject_person_id'), 'person-1');
+  assert.equal(calls[0].options.body.get('physio_organization_id'), 'org-1');
   assert.equal(calls[0].options.body.get('physio_created_by_person_id'), null);
   assert.equal(calls[0].options.body.get('physio_performer_person_id'), null);
   assert.equal(calls[0].options.body.get('physio_persistence_owner'), 'parkicheck');
   assert.deepEqual(statuses, ['uploading', 'analyzing', 'analyzing', 'completed']);
+});
+
+test('submitVideo keeps a gait task and authenticates every Hawk I request', async () => {
+  const calls = [];
+  const video = new File(['video'], 'gait.mp4', { type: 'video/mp4' });
+  const responses = [
+    jsonResponse({ success: true, id: 'gait-review', status: 'in_progress' }, 202),
+    jsonResponse({ status: 'completed', steps: {} }),
+    jsonResponse({ success: true, video_type: 'gait', updrs_score: { score: null } }),
+  ];
+
+  await submitVideo(video, {
+    baseUrl: 'https://hawk.example',
+    testType: 'gait',
+    accessToken: 'session-token',
+    fetchImpl: async (url, options = {}) => {
+      calls.push({ url, options });
+      return responses.shift();
+    },
+    pollIntervalMs: 0,
+    sleep: async () => {},
+  });
+
+  assert.equal(calls[0].options.body.get('test_type'), 'gait');
+  assert.deepEqual(calls.map(({ options }) => options.headers), [
+    { Authorization: 'Bearer session-token' },
+    { Authorization: 'Bearer session-token' },
+    { Authorization: 'Bearer session-token' },
+  ]);
 });
 
 test('normalizeAssessmentContext rejects a mismatched cross-service session', () => {
