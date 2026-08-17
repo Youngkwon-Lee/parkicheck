@@ -157,10 +157,11 @@
     .hawk-review-badge[data-state="error"] { color:#ff8b8b; border-color:rgba(255,139,139,0.48); }
     @keyframes hawkPulse { 50% { opacity:0.5; } }
     .hawk-review-status { color:rgba(255,255,255,0.55); font-size:0.68rem; line-height:1.6; }
-    .hawk-review-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin:11px 0; }
+    .hawk-review-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; margin:11px 0; }
     .hawk-review-metric { padding:9px 7px; border:1px solid rgba(255,255,255,0.08); border-radius:8px; background:rgba(0,0,0,0.18); text-align:center; }
-    .hawk-review-value { color:#d9fff7; font-size:0.9rem; font-weight:bold; }
+    .hawk-review-value { color:#d9fff7; font-size:0.78rem; font-weight:bold; line-height:1.35; }
     .hawk-review-label { margin-top:3px; color:rgba(255,255,255,0.3); font-size:0.5rem; letter-spacing:1px; }
+    .hawk-review-detail { display:block; margin-top:3px; color:rgba(255,255,255,0.38); font-size:0.54rem; line-height:1.4; }
     .hawk-review-advisory { color:rgba(255,255,255,0.54); font-size:0.64rem; line-height:1.55; }
     .hawk-review-boundary { margin-top:9px; color:rgba(255,255,255,0.27); font-size:0.56rem; line-height:1.55; }
 
@@ -707,9 +708,8 @@
         </div>
         <p id="hawkIReviewStatus" class="hawk-review-status">ParkiCheck 기기 내 분석만 사용했습니다.</p>
         <div id="hawkIReviewResult" class="hawk-review-grid" hidden>
-          <div class="hawk-review-metric"><div id="hawkIScore" class="hawk-review-value">—</div><div class="hawk-review-label">ORDINAL SIGNAL</div></div>
-          <div class="hawk-review-metric"><div id="hawkIConfidence" class="hawk-review-value">—</div><div class="hawk-review-label">CONFIDENCE</div></div>
-          <div class="hawk-review-metric"><div id="hawkIGate" class="hawk-review-value">—</div><div class="hawk-review-label">QUALITY GATE</div></div>
+          <div class="hawk-review-metric"><div id="hawkIOutcome" class="hawk-review-value">—</div><div class="hawk-review-label">MOVEMENT SIGNAL</div><span id="hawkIScoreDetail" class="hawk-review-detail"></span></div>
+          <div class="hawk-review-metric"><div id="hawkIQuality" class="hawk-review-value">—</div><div class="hawk-review-label">VIDEO QUALITY</div><span id="hawkIQualityDetail" class="hawk-review-detail"></span></div>
         </div>
         <p id="hawkIAdvisory" class="hawk-review-advisory"></p>
         <p class="hawk-review-boundary">연구 보조 관측치입니다. 진단·자동 처방이 아니며 Kinelo로 자동 전송되지 않습니다. 최종 해석은 담당자가 검토합니다.</p>
@@ -2694,11 +2694,26 @@ function discardStagedHawkIReview() {
 
 function renderHawkIResult(result) {
   const summary = window.HawkIClient.summarizeResult(result);
-  document.getElementById('hawkIScore').textContent = summary.score === null ? '—' : `${summary.score}/4`;
-  document.getElementById('hawkIConfidence').textContent = summary.confidence === null
-    ? '—'
-    : `${Math.round(summary.confidence * 100)}%`;
-  document.getElementById('hawkIGate').textContent = summary.performability.replaceAll('_', ' ').toUpperCase();
+  const outcome = summary.score === 0
+    ? '뚜렷한 느림 신호 없음'
+    : summary.score === null
+      ? '추가 검토 필요'
+      : '관찰 신호 기록됨';
+  const quality = summary.performability === 'performable'
+    ? '분석 가능'
+    : summary.performability === 'uncertain'
+      ? '수기 검토 권장'
+      : summary.performability === 'unscorable_due_to_tracking'
+        ? '재촬영 권장'
+        : '전문가 검토 필요';
+  document.getElementById('hawkIOutcome').textContent = outcome;
+  document.getElementById('hawkIScoreDetail').textContent = summary.score === null
+    ? '연구용 분석 결과'
+    : `연구용 신호 ${summary.score}/4 · 진단 점수 아님`;
+  document.getElementById('hawkIQuality').textContent = quality;
+  document.getElementById('hawkIQualityDetail').textContent = summary.performability === 'uncertain'
+    ? '손 추적 안정성을 전문가가 함께 확인합니다.'
+    : '최종 해석은 담당자가 확인합니다.';
   document.getElementById('hawkIAdvisory').textContent = summary.advisory;
   document.getElementById('hawkIReviewResult').hidden = false;
   if (summary.score === null) {
@@ -3071,10 +3086,10 @@ function detectTapsVideo(landmarks, handIdx, timestampMs) {
 // TAP DETECTION (live camera)
 // ═══════════════════════════════════════════
 function detectTaps(landmarks, handIdx) {
-  const W=canvas.width, H=canvas.height;
   const thumb=landmarks[THUMB_TIP], now=Date.now();
   const active=[false,false,false,false];
-  getTrail(handIdx,'t').add((1-thumb.x)*W, thumb.y*H);
+  const thumbPoint=projectLiveCameraLandmark(thumb);
+  getTrail(handIdx,'t').add(thumbPoint.x, thumbPoint.y);
 
   // Track hand size (wrist→middle MCP) for amplitude normalization
   const wrist=landmarks[0], mcp9=landmarks[9];
@@ -3084,7 +3099,7 @@ function detectTaps(landmarks, handIdx) {
 
   FINGER_TIPS.forEach((tipIdx,fi)=>{
     const tip=landmarks[tipIdx];
-    const x=(1-tip.x)*W, y=tip.y*H;
+    const {x,y}=projectLiveCameraLandmark(tip);
     getTrail(handIdx,fi).add(x,y);
     const dx=thumb.x-tip.x, dy=thumb.y-tip.y;
     const dist=Math.sqrt(dx*dx+dy*dy);
@@ -3104,10 +3119,9 @@ function detectTaps(landmarks, handIdx) {
 const HAND_COOLDOWN = 280;
 
 function detectHandMovements(landmarks, handIdx) {
-  const W=canvas.width, H=canvas.height;
   const mcps=[5,9,13,17].map(i=>landmarks[i]);
   const palm={x:mcps.reduce((a,m)=>a+m.x,0)/4, y:mcps.reduce((a,m)=>a+m.y,0)/4};
-  const palmX=(1-palm.x)*W, palmY=palm.y*H;
+  const {x:palmX,y:palmY}=projectLiveCameraPoint(palm.x,palm.y);
 
   // Hand size ref (wrist→MCP9)
   const wrist=landmarks[0], mcp9=landmarks[9];
@@ -3143,10 +3157,9 @@ function detectHandMovements(landmarks, handIdx) {
 const FLIP_COOLDOWN = 300;
 
 function detectPronation(landmarks, handIdx) {
-  const W=canvas.width, H=canvas.height;
   // Palm center for display
   const wrist=landmarks[0];
-  const cx=(1-wrist.x)*W, cy=wrist.y*H;
+  const {x:cx,y:cy}=projectLiveCameraLandmark(wrist);
 
   // Palm normal: cross product of (wrist→MCP5) × (wrist→MCP17) — z component
   const mcp5=landmarks[5], mcp17=landmarks[17];
@@ -3178,7 +3191,6 @@ function detectPronation(landmarks, handIdx) {
 // 3.14 REST TREMOR DETECTION
 // ═══════════════════════════════════════════
 function detectTremor(landmarks, handIdx) {
-  const W=canvas.width, H=canvas.height;
   const wrist=landmarks[0], mcp9=landmarks[9];
   const hs=Math.sqrt((wrist.x-mcp9.x)**2+(wrist.y-mcp9.y)**2);
   if(hs>0.05) testData.handSizeRef=testData.handSizeRef?testData.handSizeRef*0.9+hs*0.1:hs;
@@ -3198,7 +3210,7 @@ function detectTremor(landmarks, handIdx) {
       const last=tremorLastRingT[handIdx]||0;
       if(now-last>=period){
         tremorLastRingT[handIdx]=now;
-        const rx=(1-wrist.x)*W, ry=wrist.y*H;
+        const {x:rx,y:ry}=projectLiveCameraLandmark(wrist);
         effects.push(new ResonanceRing(rx,ry,'#a78bfa'));
         effects.push(new ResonanceRing(rx,ry,'#c4b5fd'));
       }
@@ -3269,7 +3281,6 @@ function triggerToeTap(x, y, lift) {
 
 function detectToeTap(poseLandmarks) {
   if(!poseLandmarks) return;
-  const W=canvas.width, H=canvas.height;
   const now=Date.now();
   [{name:'left',idx:27},{name:'right',idx:28}].forEach(({name,idx})=>{
     const lm=poseLandmarks[idx];
@@ -3278,7 +3289,7 @@ function detectToeTap(poseLandmarks) {
     ankleBaseY[name]=ankleBaseY[name]*0.985+lm.y*0.015;
     const lift=ankleBaseY[name]-lm.y;
     const isUp=lift>TOE_LIFT_THRESH, wasUp=prevAnkleUp[name];
-    const x=(1-lm.x)*W, y=lm.y*H;
+    const {x,y}=projectLiveCameraLandmark(lm);
     if(!isUp&&wasUp&&(now-lastToeTapMs[name])>TOE_COOLDOWN){
       triggerToeTap(x,y,Math.max(lift,TOE_LIFT_THRESH));
       lastToeTapMs[name]=now;
@@ -3316,7 +3327,6 @@ function triggerLegLift(x, y, lift) {
 
 function detectLegAgility(poseLandmarks) {
   if(!poseLandmarks) return;
-  const W=canvas.width, H=canvas.height;
   const now=Date.now();
   [{name:'left',idx:25},{name:'right',idx:26}].forEach(({name,idx})=>{
     const lm=poseLandmarks[idx];
@@ -3325,7 +3335,7 @@ function detectLegAgility(poseLandmarks) {
     kneeBaseY[name]=kneeBaseY[name]*0.985+lm.y*0.015;
     const lift=kneeBaseY[name]-lm.y;
     const isUp=lift>KNEE_LIFT_THRESH, wasUp=prevKneeUp[name];
-    const x=(1-lm.x)*W, y=lm.y*H;
+    const {x,y}=projectLiveCameraLandmark(lm);
     if(!isUp&&wasUp&&(now-lastLegTapMs[name])>LEG_COOLDOWN){
       triggerLegLift(x,y,Math.max(lift,KNEE_LIFT_THRESH));
       lastLegTapMs[name]=now;
@@ -3361,7 +3371,7 @@ const wristTrails = {15:[], 16:[]};
 
 function drawPoseSkeleton(landmarks) {
   if(!landmarks) return;
-  const W=canvas.width, H=canvas.height;
+  const point = lm => projectLiveCameraLandmark(lm);
 
   // ── Skeleton lines ──────────────────────────────────────
   // Posture: color skeleton by lean severity; Gait: accent active limbs
@@ -3381,7 +3391,8 @@ function drawPoseSkeleton(landmarks) {
   POSE_CONNECTIONS.forEach(([a,b])=>{
     const la=landmarks[a], lb=landmarks[b];
     if(!la||!lb||(la.visibility??1)<0.3||(lb.visibility??1)<0.3) return;
-    ctx.beginPath(); ctx.moveTo((1-la.x)*W,la.y*H); ctx.lineTo((1-lb.x)*W,lb.y*H); ctx.stroke();
+    const pa=point(la), pb=point(lb);
+    ctx.beginPath(); ctx.moveTo(pa.x,pa.y); ctx.lineTo(pb.x,pb.y); ctx.stroke();
   });
   ctx.restore();
 
@@ -3396,7 +3407,7 @@ function drawPoseSkeleton(landmarks) {
   (hlMap[testType]||hlMap.toe).forEach(([i,c,r])=>{
     const lm=landmarks[i];
     if(!lm||(lm.visibility??1)<0.3) return;
-    const x=(1-lm.x)*W, y=lm.y*H;
+    const {x,y}=point(lm);
     ctx.shadowBlur=18; ctx.shadowColor=c; ctx.fillStyle=c;
     ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
     // Extra outer ring for posture joints when leaning
@@ -3413,8 +3424,10 @@ function drawPoseSkeleton(landmarks) {
   if(isPosture && testState==='running') {
     const ls=landmarks[11], rs=landmarks[12], lh=landmarks[23], rh=landmarks[24];
     if(ls&&rs&&lh&&rh&&(ls.visibility??1)>0.3) {
-      const smx=(1-(ls.x+rs.x)/2)*W, smy=(ls.y+rs.y)/2*H;
-      const hmx=(1-(lh.x+rh.x)/2)*W, hmy=(lh.y+rh.y)/2*H;
+      const shoulderMid=projectLiveCameraPoint((ls.x+rs.x)/2,(ls.y+rs.y)/2);
+      const hipMid=projectLiveCameraPoint((lh.x+rh.x)/2,(lh.y+rh.y)/2);
+      const smx=shoulderMid.x, smy=shoulderMid.y;
+      const hmx=hipMid.x, hmy=hipMid.y;
       const leanC = leanSeverity<0.3?'#00ffcc':leanSeverity<0.6?'#ffff00':'#ff4444';
       ctx.save();
       // Vertical reference line
@@ -3438,7 +3451,7 @@ function drawPoseSkeleton(landmarks) {
     [15,16].forEach(idx=>{
       const lm=landmarks[idx];
       if(!lm||(lm.visibility??1)<0.3) return;
-      const x=(1-lm.x)*W, y=lm.y*H;
+      const {x,y}=point(lm);
       const trail=wristTrails[idx];
       trail.push({x,y,t:Date.now()});
       if(trail.length>18) trail.shift();
@@ -3559,7 +3572,6 @@ const GAIT_COOLDOWN    = 280;
 function detectGait(poseLandmarks) {
   if(!poseLandmarks || testState !== 'running') return;
   const now = Date.now();
-  const W=canvas.width, H=canvas.height;
   [{name:'left',aIdx:27},{name:'right',aIdx:28}].forEach(({name,aIdx})=>{
     const ankle=poseLandmarks[aIdx];
     if(!ankle||(ankle.visibility??1)<0.4) return;
@@ -3570,7 +3582,7 @@ function detectGait(poseLandmarks) {
     if(!isUp&&prevAnkleUpGait[name]&&(now-lastGaitStepMs[name])>GAIT_COOLDOWN){
       gaitSteps.push({t:now, foot:name, lift:Math.max(lift,GAIT_LIFT_THRESH)});
       lastGaitStepMs[name]=now;
-      const x=(1-ankle.x)*W, y=ankle.y*H;
+      const {x,y}=projectLiveCameraLandmark(ankle);
       effects.push(new GroundRipple(x,y,'#fb923c'));
       effects.push(new FloatingText(x,y-30,name==='left'?'L':'R','#fb923c',14));
       testData.taps.push({t:now, amplitude:Math.max(lift,GAIT_LIFT_THRESH)});
@@ -3857,8 +3869,9 @@ const FM_NOSE=[[168,6],[6,197],[197,195],[195,5],[5,4],[4,1],[1,19],[19,94],[94,
 
 function drawFaceMesh(lm) {
   if(!lm) return;
-  const W=canvas.width, H=canvas.height;
-  const lx=i=>(1-lm[i].x)*W, ly=i=>lm[i].y*H;
+  const viewport=getLiveCameraViewport();
+  const lx=i=>viewport.x+(1-lm[i].x)*viewport.width;
+  const ly=i=>viewport.y+lm[i].y*viewport.height;
   const earAvg=(faceLastEAR.left+faceLastEAR.right)/2;
   const t=Math.max(0,Math.min(1,1-(earAvg-0.15)/(0.35-0.15)));
   const eyeColor=`rgba(${Math.round(80+175*t)},${Math.round(220*(1-t))},${Math.round(200+55*t)},0.95)`;
@@ -4052,7 +4065,14 @@ function drawFingerTapCharge(landmarks, activeFingers, lx, ly) {
 
 function drawHand(landmarks, activeFingers, opts = {}) {
   const W = canvas.width, H = canvas.height;
-  const { ox=0, oy=0, sw=W, sh=H, mirror=true } = opts;
+  const hasExplicitViewport = Number.isFinite(opts.ox) && Number.isFinite(opts.oy)
+    && Number.isFinite(opts.sw) && Number.isFinite(opts.sh);
+  const liveViewport = hasExplicitViewport ? null : getLiveCameraViewport();
+  const ox = hasExplicitViewport ? opts.ox : liveViewport.x;
+  const oy = hasExplicitViewport ? opts.oy : liveViewport.y;
+  const sw = hasExplicitViewport ? opts.sw : liveViewport.width;
+  const sh = hasExplicitViewport ? opts.sh : liveViewport.height;
+  const mirror = opts.mirror ?? true;
   const lx = lm => ox + (mirror ? (1-lm.x) : lm.x) * sw;
   const ly = lm => oy + lm.y * sh;
   ctx.save(); ctx.strokeStyle='rgba(255,255,255,0.18)'; ctx.lineWidth=1.5;
@@ -4079,11 +4099,45 @@ const ctx    = canvas.getContext('2d');
 function resize() { canvas.width=window.innerWidth; canvas.height=window.innerHeight; }
 window.addEventListener('resize',resize); resize();
 
+// The camera element uses `object-fit: cover` and is mirrored in CSS.  A
+// normalized MediaPipe point therefore cannot be mapped directly to the full
+// canvas: on a portrait viewport, the video is enlarged and cropped at both
+// sides.  Keep every live overlay in that same visible video viewport.
+function getLiveCameraViewport() {
+  const sourceWidth = video.videoWidth || 1280;
+  const sourceHeight = video.videoHeight || 720;
+  const scale = Math.max(canvas.width / sourceWidth, canvas.height / sourceHeight);
+  const width = sourceWidth * scale;
+  const height = sourceHeight * scale;
+  return {
+    x: (canvas.width - width) / 2,
+    y: (canvas.height - height) / 2,
+    width,
+    height,
+  };
+}
+
+function projectLiveCameraPoint(x, y, mirror = true) {
+  const viewport = getLiveCameraViewport();
+  return {
+    x: viewport.x + (mirror ? 1 - x : x) * viewport.width,
+    y: viewport.y + y * viewport.height,
+  };
+}
+
+function projectLiveCameraLandmark(landmark, mirror = true) {
+  return projectLiveCameraPoint(landmark.x, landmark.y, mirror);
+}
+
 function frame() {
   // Skip live rendering during video analysis
   if(appMode==='video' && document.getElementById('videoProgressOverlay').style.display!=='none') {
     requestAnimationFrame(frame); return;
   }
+
+  // A cancelled/failed uploaded-video pass must never leave the live camera
+  // layer hidden while its MediaPipe overlay continues rendering.
+  if(appMode!=='video' && video.style.visibility==='hidden') video.style.visibility='';
 
   const W=canvas.width, H=canvas.height;
   ctx.clearRect(0,0,W,H);
