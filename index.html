@@ -2366,13 +2366,15 @@ function triggerTap(x, y, fi) {
   lastTapTime = now; tapCount++;
   tapHistory.push(now); if(tapHistory.length>10) tapHistory.shift();
 
-  const sc = Math.min(1+combo*0.18, 3.2);
-  const pc = Math.floor(28*sc);
-  for(let i=0;i<pc;i++) effects.push(new Particle(x,y,color,sc*0.75));
-  effects.push(new Shockwave(x,y,color,0,sc), new GlowPulse(x,y,color), new Burst(x,y,color), new ScreenFlash(color));
-  bgWaves.push(new BgWave(x,y,color));
-  if(combo>=2){effects.push(new Shockwave(x,y,color,6,sc*0.85),new Shockwave(x,y,color,13,sc*0.65),new RingSegment(x,y,color,sc*0.9));}
-  if(combo>=3){effects.push(new Lightning(x,y,color));setTimeout(()=>bgWaves.push(new BgWave(x,y,FINGER_COLORS[(fi+2)%4])),120);}
+  // Keep the hand motion legible. These are display-only effects and do not
+  // influence tap detection, measurement, or the UPDRS research score.
+  const sc = Math.min(1+combo*0.12, 2.1);
+  const pc = Math.min(16, Math.floor(9*sc));
+  for(let i=0;i<pc;i++) effects.push(new Particle(x,y,color,sc*0.58));
+  effects.push(new Shockwave(x,y,color,0,sc*0.72), new GlowPulse(x,y,color));
+  if(combo>=2){effects.push(new Shockwave(x,y,color,7,sc*0.58),new RingSegment(x,y,color,sc*0.68));}
+  if(combo>=3){effects.push(new Burst(x,y,color),new ScreenFlash(color),new Lightning(x,y,color));setTimeout(()=>bgWaves.push(new BgWave(x,y,FINGER_COLORS[(fi+2)%4])),120);}
+  if(combo>=5) bgWaves.push(new BgWave(x,y,color));
   if(combo>=5){
     const lbl=COMBO_LABELS[combo]||(combo%5===0?`×${combo} `+COMBO_POOL[combo%COMBO_POOL.length]:COMBO_POOL[Math.floor(Math.random()*COMBO_POOL.length)]);
     effects.push(new FloatingText(x,y-50,lbl,color,Math.min(20+Math.floor(combo*0.8),44)),new RingSegment(x,y,color,sc));
