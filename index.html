@@ -608,7 +608,7 @@
         <input type="checkbox" id="liveHawkIConsent">
         <span>
           <strong>원본 영상 녹화 후 HAWK_I 연구 분석 연결</strong>
-          <span>검사 중 카메라 원본 영상을 짧게 녹화해 종료 후 Hawk_I 연구 서버로 전송합니다. 게임 이펙트·화면 UI는 녹화되지 않으며, 동의하지 않으면 ParkiCheck 기기 내 분석만 수행합니다.</span>
+          <span>검사 중 카메라 원본 영상을 짧게 녹화해 이 브라우저에만 임시 보관합니다. 결과 화면에서 ‘저장 후 HAWK_I 분석’을 눌렀을 때에만 Hawk_I 연구 서버로 전송합니다. 게임 이펙트·화면 UI는 녹화되지 않으며, 동의하지 않으면 ParkiCheck 기기 내 분석만 수행합니다.</span>
         </span>
       </label>
       <button class="btn-primary" id="testStartBtn">START TEST</button>
@@ -2642,12 +2642,12 @@ function prepareHawkIReview(enabled) {
     return;
   }
 
-  setHawkIReviewState('ready', 'READY TO SAVE', '결과 저장을 누르면 동의한 영상을 Hawk_I 연구 서버로 전송합니다.');
+  setHawkIReviewState('ready', 'READY TO SAVE', '‘저장 후 HAWK_I 분석’을 눌렀을 때에만 동의한 영상을 Hawk_I 연구 서버로 전송합니다.');
 }
 
 function stageHawkIReview(file, options = {}) {
   pendingHawkIReview = { file, options };
-  setHawkIReviewState('ready', 'READY TO SAVE', '원본 영상이 준비되었습니다. 결과 저장을 누르면 Hawk_I 연구 분석을 시작합니다.');
+  setHawkIReviewState('ready', 'READY TO SAVE', '원본 영상이 준비되었습니다. ‘저장 후 HAWK_I 분석’을 눌러야 Hawk_I 연구 분석을 시작합니다.');
   const saveBtn = document.getElementById('saveResultBtn');
   if (saveBtn) saveBtn.textContent = '💾 저장 후 HAWK_I 분석';
 }
