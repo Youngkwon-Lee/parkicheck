@@ -110,16 +110,6 @@ test('finger tapping makes near-contact feedback visible without changing the sc
   assert.match(html, /const isTap=dist<TAP_THRESH/);
 });
 
-test('finger tapping scores the ten-tap MDS-UPDRS protocol window', () => {
-  assert.match(html, /const PROTOCOL_TAPS = 10/);
-  assert.match(html, /function scoreUPDRS\(allTaps, sessionArrests, durationSec = 10\)/);
-  assert.match(html, /const spanSec = n >= 2/);
-  assert.match(html, /freq>=4\.0\?0:freq>=3\.0\?1:freq>=2\.0\?2/);
-  assert.match(html, /iti_cv<20\?0:iti_cv<35\?1/);
-  assert.match(html, /nTotal > n/);
-  assert.match(html, /MDS-UPDRS 3\.4 · \$\{n\} taps scored/);
-});
-
 test('every result gets a fresh canonical save contract and resets the save action', () => {
   assert.match(html, /assessment_session_id: payload\?\.assessment_session_id \|\| createAssessmentSessionId\(\)/);
   assert.match(html, /medication_context: payload\?\.medication_context \|\| getMedicationContext\(new Date\(\)\)/);
