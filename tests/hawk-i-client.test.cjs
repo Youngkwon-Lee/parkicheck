@@ -8,6 +8,7 @@ const {
   resolveAllowedUploadBaseUrl,
   submitVideo,
   summarizeResult,
+  TIMELINE_CONTRACT_VERSION,
   validateVideo,
 } = require('../hawk-i-client.js');
 
@@ -48,6 +49,15 @@ test('summarizeResult reads the Hawk I total_score contract', () => {
 
   assert.equal(summary.score, 3);
   assert.equal(summary.confidence, 0.72);
+});
+
+test('summarizeResult does not misstate rule-fallback execution as score confidence', () => {
+  const summary = summarizeResult({
+    scoring_method: 'rule',
+    updrs_score: { total_score: 0.4, method: 'rule', confidence: 1 },
+  });
+  assert.equal(summary.confidence, null);
+  assert.match(summary.advisory, /C3 연구 모델 결과가 아니/);
 });
 
 test('summarizeResult keeps a completed analysis without a score in manual review', () => {
@@ -114,8 +124,12 @@ test('submitVideo sends a consented finger task and returns the completed result
   assert.equal(calls[0].url, 'https://upload.hawk.example/direct/api/analyze');
   assert.equal(calls[1].url, 'https://hawk.example/api/analysis/progress/review-123');
   assert.equal(calls[0].options.body.get('test_type'), 'finger_tapping');
+  assert.equal(calls[0].options.headers.Authorization, 'Bearer supabase-access-token');
   assert.equal(calls[0].options.body.get('scoring_method'), 'coral');
   assert.equal(calls[0].options.body.get('assessment_session_id'), 'assessment-123');
+  assert.equal(calls[0].options.body.get('physio_activity_session_id'), 'assessment-123');
+  assert.equal(calls[0].options.body.get('physio_contract_version'), TIMELINE_CONTRACT_VERSION);
+  assert.equal(calls[0].options.body.get('physio_persistence_owner'), 'parkicheck');
   assert.equal(calls[0].options.body.get('patient_id'), 'research-assessment-123');
   assert.deepEqual(JSON.parse(calls[0].options.body.get('medication_context')), {
     available: true,
@@ -133,7 +147,6 @@ test('submitVideo sends a consented finger task and returns the completed result
   assert.equal(calls[0].options.body.get('physio_created_by_person_id'), null);
   assert.equal(calls[0].options.body.get('physio_performer_person_id'), null);
   assert.equal(calls[0].options.body.get('physio_persistence_owner'), 'parkicheck');
-  assert.equal(calls[0].options.headers.Authorization, 'Bearer supabase-access-token');
   assert.equal(calls[1].options.headers.Authorization, 'Bearer supabase-access-token');
   assert.equal(calls[3].options.headers.Authorization, 'Bearer supabase-access-token');
   assert.deepEqual(statuses, ['uploading', 'analyzing', 'analyzing', 'completed']);
@@ -159,6 +172,35 @@ test('submitVideo fails closed before upload when patient context has no token',
   }), /로그인이 필요/);
 
   assert.equal(fetchCalled, false);
+});
+
+test('submitVideo keeps a gait task and authenticates every Hawk I request', async () => {
+  const calls = [];
+  const video = new File(['video'], 'gait.mp4', { type: 'video/mp4' });
+  const responses = [
+    jsonResponse({ success: true, id: 'gait-review', status: 'in_progress' }, 202),
+    jsonResponse({ status: 'completed', steps: {} }),
+    jsonResponse({ success: true, video_type: 'gait', updrs_score: { score: null } }),
+  ];
+
+  await submitVideo(video, {
+    baseUrl: 'https://hawk.example',
+    testType: 'gait',
+    accessToken: 'session-token',
+    fetchImpl: async (url, options = {}) => {
+      calls.push({ url, options });
+      return responses.shift();
+    },
+    pollIntervalMs: 0,
+    sleep: async () => {},
+  });
+
+  assert.equal(calls[0].options.body.get('test_type'), 'gait');
+  assert.deepEqual(calls.map(({ options }) => options.headers), [
+    { Authorization: 'Bearer session-token' },
+    { Authorization: 'Bearer session-token' },
+    { Authorization: 'Bearer session-token' },
+  ]);
 });
 
 test('normalizeAssessmentContext rejects a mismatched cross-service session', () => {

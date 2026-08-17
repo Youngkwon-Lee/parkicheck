@@ -9,8 +9,11 @@
     root.HawkIClient = client;
   }
 })(typeof window !== 'undefined' ? window : globalThis, function createHawkIClient() {
-  const DEFAULT_BASE_URL = 'https://hawkeye-labeling-tool.vercel.app';
+  // Route the bounded research-review flow to the authenticated Hawk_I
+  // Funnel; the Vercel dashboard remains the result-viewing surface.
+  const DEFAULT_BASE_URL = 'https://desktop-t43sn5m-1.tailde3b80.ts.net/hawkeye-api';
   const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
+  const TIMELINE_CONTRACT_VERSION = 'parkicheck-hawk-i/v1';
 
   function normalizeMedicationContext(value) {
     if (!value || typeof value !== 'object') return null;
@@ -124,7 +127,9 @@
     }
 
     if (!response.ok) {
-      throw new Error(payload?.error || fallbackMessage || `Hawk_I request failed (${response.status})`);
+      if (payload?.error) throw new Error(payload.error);
+      if (fallbackMessage) throw new Error(`${fallbackMessage} (HTTP ${response.status})`);
+      throw new Error(`Hawk_I request failed (${response.status})`);
     }
 
     return payload;
@@ -134,6 +139,10 @@
     if (!file) throw new Error('분석할 영상이 없습니다.');
     if (file.size > MAX_VIDEO_BYTES) throw new Error('Hawk_I 전송은 100MB 이하 영상만 지원합니다.');
     if (file.type && !file.type.startsWith('video/')) throw new Error('영상 파일만 Hawk_I로 전송할 수 있습니다.');
+  }
+
+  function normalizeTaskType(value) {
+    return value === 'gait' ? 'gait' : 'finger_tapping';
   }
 
   function authorizationHeaders(accessToken, required = false) {
@@ -150,13 +159,16 @@
   }
 
   function summarizeResult(result) {
+    const method = result?.updrs_score?.method || result?.scoring_method || 'Hawk_I';
     const scoreValue = result?.updrs_score?.total_score ?? result?.updrs_score?.score;
     const score = scoreValue !== null && scoreValue !== undefined && scoreValue !== '' && Number.isFinite(Number(scoreValue))
       ? Number(scoreValue)
       : null;
     // The top-level confidence describes task classification, not score certainty.
     // Never present it as clinical-score confidence.
-    const confidenceValue = result?.updrs_score?.confidence;
+    const confidenceValue = String(method).toLowerCase() === 'coral'
+      ? result?.updrs_score?.confidence
+      : null;
     const confidence = confidenceValue !== null && confidenceValue !== undefined && confidenceValue !== '' && Number.isFinite(Number(confidenceValue))
       ? Math.max(0, Math.min(1, Number(confidenceValue)))
       : null;
@@ -165,12 +177,14 @@
       score,
       confidence,
       severity: result?.updrs_score?.severity || '검토 필요',
-      method: result?.updrs_score?.method || result?.scoring_method || 'Hawk_I',
+      method,
       performability: result?.performability_assessment?.status || 'not_reported',
       advisoryLevel: result?.score_advisory?.level || 'review_recommended',
       advisory:
         result?.score_advisory?.summary ||
-        '자동 분석 결과는 연구 보조 관측치이며 담당자의 검토가 필요합니다.',
+        (String(method).toLowerCase() === 'rule'
+          ? '현재 규칙 기반 연구 보조 신호입니다. C3 연구 모델 결과가 아니며 담당자의 검토가 필요합니다.'
+          : '자동 분석 결과는 연구 보조 관측치이며 담당자의 검토가 필요합니다.'),
       videoType: result?.video_type || 'finger_tapping',
     };
   }
@@ -189,10 +203,13 @@
     const formData = new FormData();
 
     formData.append('video_file', file, file.name || 'parkicheck-video.webm');
-    formData.append('test_type', 'finger_tapping');
+    formData.append('test_type', normalizeTaskType(options.testType));
     formData.append('scoring_method', 'coral');
     if (options.assessmentSessionId) {
       formData.append('assessment_session_id', options.assessmentSessionId);
+      formData.append('physio_activity_session_id', options.assessmentSessionId);
+      formData.append('physio_contract_version', TIMELINE_CONTRACT_VERSION);
+      formData.append('physio_persistence_owner', 'parkicheck');
     }
     if (options.patientId) {
       formData.append('patient_id', options.patientId);
@@ -262,8 +279,10 @@
   return {
     DEFAULT_BASE_URL,
     MAX_VIDEO_BYTES,
+    TIMELINE_CONTRACT_VERSION,
     normalizeAssessmentContext,
     normalizeMedicationContext,
+    normalizeTaskType,
     resolveAllowedPreviewBaseUrl,
     resolveAllowedUploadBaseUrl,
     submitVideo,

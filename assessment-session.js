@@ -3,6 +3,8 @@
   if (typeof module !== 'undefined' && module.exports) module.exports = session;
   if (root) root.ParkiAssessmentSession = session;
 })(typeof window !== 'undefined' ? window : globalThis, function createParkiAssessmentSession() {
+  const TIMELINE_CONTRACT_VERSION = 'parkicheck-hawk-i/v1';
+
   function requiredText(value, label) {
     if (typeof value !== 'string' || !value.trim()) throw new Error(`${label} is required`);
     return value.trim();
@@ -62,6 +64,7 @@
       status,
       performed_at: assessmentTimestamp(payload),
       metrics: {
+        contract_version: TIMELINE_CONTRACT_VERSION,
         app_source: 'parkicheck',
         assessment_session_id: assessmentSessionId,
         integration_context: context,
@@ -115,6 +118,7 @@
       value_type: 'integer',
       value_integer: Math.round(score),
       measurement_context: {
+        contract_version: TIMELINE_CONTRACT_VERSION,
         app_source: 'parkicheck',
         assessment_session_id: assessmentSessionId,
         integration_context: context,
@@ -136,6 +140,7 @@
   }
 
   return {
+    TIMELINE_CONTRACT_VERSION,
     assessmentTimestamp,
     buildAssessmentContext,
     buildActivitySessionRow,

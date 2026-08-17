@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+  TIMELINE_CONTRACT_VERSION,
   buildAssessmentContext,
   buildActivitySessionRow,
   buildObservationRow,
@@ -53,11 +54,13 @@ test('ParkiCheck uses one canonical activity session for local and Hawk I data',
   assert.equal(session.id, payload.assessment_session_id);
   assert.equal(session.subject_person_id, identity.personId);
   assert.equal(session.metrics.assessment_session_id, payload.assessment_session_id);
+  assert.equal(session.metrics.contract_version, TIMELINE_CONTRACT_VERSION);
   assert.equal(session.metrics.hawk_i.analysis_id, 'hawk-123');
   assert.equal(observation.activity_session_id, session.id);
   assert.equal(observation.subject_person_id, identity.personId);
   assert.equal(observation.measurement_context.assessment_session_id, session.id);
   assert.deepEqual(observation.measurement_context.integration_context, context);
+  assert.equal(observation.measurement_context.contract_version, TIMELINE_CONTRACT_VERSION);
   assert.equal(observation.measurement_context.hawk_i.analysis_id, 'hawk-123');
   assert.equal(observation.measurement_context.medication_context.hours_before_assessment, 1.5);
   assert.equal(observation.effective_datetime, '2026-07-27T01:30:00.000Z');
