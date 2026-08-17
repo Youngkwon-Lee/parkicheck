@@ -69,9 +69,12 @@ test('Hawk I review reserves an authenticated in-progress activity session befor
   assert.match(html, /task_code: isGait \? 'UPDRS_3_9' : 'UPDRS_3_4'/);
 });
 
-test('login applies the authenticated user before opening the assessment', () => {
+test('login resets the prior identity context before opening the assessment', () => {
   assert.match(html, /const \{ data, error \} = await supa\.auth\.signInWithPassword/);
-  assert.match(html, /currentUser = data\.user;\s*updateAuthUI\(\);\s*trackAnalytics\('login_completed'/);
+  assert.match(html, /function setAuthenticatedUser\(nextUser\)/);
+  assert.match(html, /if \(previousUserId !== nextUserId\) \{\s*_personId = null;\s*_orgId = null;/);
+  assert.match(html, /setAuthenticatedUser\(data\.user\);\s*updateAuthUI\(\);\s*trackAnalytics\('login_completed'/);
+  assert.match(html, /supa\.auth\.onAuthStateChange\([\s\S]*setAuthenticatedUser\(session\?\.user \?\? null\)/);
 });
 
 test('Hawk I review creates an authenticated shared session before upload', () => {

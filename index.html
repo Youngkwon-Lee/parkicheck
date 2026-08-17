@@ -772,6 +772,19 @@ let _orgId    = null; // cached organization_id for the active Hawk I workspace
 // otherwise it keeps the personal workspace fallback used by standalone use.
 const HAWK_I_SHARED_ORGANIZATION_ID = '13d483d9-b785-41d4-8eb8-fc0b55d48c86';
 
+function setAuthenticatedUser(nextUser) {
+  const previousUserId = currentUser?.id || null;
+  const nextUserId = nextUser?.id || null;
+  // A person/org context is only valid for the auth user that resolved it.
+  // Without this reset, signing into a second account in the same page can
+  // reuse the prior user's cached subject and persist a video to that record.
+  if (previousUserId !== nextUserId) {
+    _personId = null;
+    _orgId = null;
+  }
+  currentUser = nextUser || null;
+}
+
 async function resolveHawkISharedOrganization(personId) {
   if (!supa || !personId) return null;
   try {
@@ -964,7 +977,7 @@ function normalizedHawkIResult(result) {
 }
 
 supa.auth.onAuthStateChange((_e, session) => {
-  currentUser = session?.user ?? null;
+  setAuthenticatedUser(session?.user ?? null);
   updateAuthUI();
   if (currentUser) void refreshServerMedicationLogs();
   else {
@@ -976,7 +989,7 @@ supa.auth.onAuthStateChange((_e, session) => {
 // On load: silently cache session state
 supa.auth.getSession().then(({ data }) => {
   if (data.session) {
-    currentUser = data.session.user;
+    setAuthenticatedUser(data.session.user);
     updateAuthUI();
     void refreshServerMedicationLogs();
   }
@@ -1033,7 +1046,7 @@ async function doLogin() {
   const { data, error } = await supa.auth.signInWithPassword({ email, password: pw });
   document.getElementById('loginBtn').textContent = 'LOGIN';
   if (error) { errEl.textContent = error.message; return; }
-  currentUser = data.user;
+  setAuthenticatedUser(data.user);
   updateAuthUI();
   trackAnalytics('login_completed', { auth_method: 'email_password' });
   showAssessSelector();
@@ -1074,7 +1087,7 @@ async function doSignup() {
 
 async function doSignOut() {
   await supa.auth.signOut();
-  currentUser = null; _personId = null; _orgId = null;
+  setAuthenticatedUser(null);
   serverMedicationLogs = []; medicationServerLoaded = false;
   document.getElementById('profileMenu').classList.remove('open');
   cameraStarted = false;
