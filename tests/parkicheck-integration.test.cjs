@@ -113,6 +113,32 @@ test('finger tapping makes near-contact feedback visible without changing the sc
   assert.match(html, /const isTap=dist<TAP_THRESH/);
 });
 
+test('finger tapping uses a balanced local cue for recordings', () => {
+  assert.match(html, /const cueScale = Math\.min\(0\.58 \+ combo\*0\.035, 0\.9\)/);
+  assert.match(html, /const particleCount = Math\.min\(10, 4 \+ Math\.floor\(combo \/ 2\)\)/);
+  assert.match(html, /new Particle\(x,y,color,cueScale\*0\.55\)/);
+  assert.match(html, /new Shockwave\(x,y,color,0,cueScale\)/);
+  assert.match(html, /new GlowPulse\(x,y,color,cueScale\)/);
+  assert.match(html, /if\(combo>=2\) effects\.push\(new RingSegment\(x,y,color,cueScale\*0\.8\)\)/);
+  assert.match(html, /if\(combo>=4\) effects\.push\(new Burst\(x,y,color\)\)/);
+  assert.doesNotMatch(html, /new ScreenFlash\(color\)/);
+  assert.doesNotMatch(html, /new Lightning\(x,y,color\)/);
+});
+
+test('finger tapping presents observational metrics instead of a local ordinal grade', () => {
+  assert.match(html, /id="resMedianITI"/);
+  assert.match(html, /TAP INTERVAL \(MS\)/);
+  assert.match(html, /RHYTHM CV \(%\)/);
+  assert.match(html, /RELATIVE AMP \(%\)/);
+  assert.match(html, /function setFingerRecordPresentation\(active\)/);
+  assert.match(html, /node\.style\.display = active \? 'none' : '';/);
+  assert.match(html, /finger-record-grid/);
+  assert.match(html, /const isFingerRecord = testType === 'finger';/);
+  assert.match(html, /FINGER TAPPING · RESEARCH LOG/);
+  assert.match(html, /function fingerRecordFeedback\(n\)/);
+  assert.match(html, /잘했어요! 수행 기록이 저장될 준비가 됐어요/);
+});
+
 test('every result gets a fresh canonical save contract and resets the save action', () => {
   assert.match(html, /assessment_session_id: payload\?\.assessment_session_id \|\| createAssessmentSessionId\(\)/);
   assert.match(html, /medication_context: payload\?\.medication_context \|\| getMedicationContext\(new Date\(\)\)/);
