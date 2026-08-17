@@ -757,10 +757,12 @@ let currentAssessmentSessionId = null;
 let currentAssessmentMedicationContext = null;
 let hawkIReviewPromise = null;
 let lastHawkIResult = null;
+let pendingHawkIReview = null;
 let liveHawkIRecorder = null;
 let liveHawkIChunks = [];
 let liveHawkIRecordingEnabled = false;
 let liveHawkIRecordingError = null;
+let liveHawkIRecordingDiscarded = false;
 let serverMedicationLogs = [];
 let medicationServerLoaded = false;
 
@@ -922,6 +924,7 @@ function setLastResultPayload(payload) {
   if (saveBtn) {
     saveBtn.style.display = '';
     saveBtn.disabled = false;
+    saveBtn.textContent = pendingHawkIReview ? '💾 저장 후 HAWK_I 분석' : '💾 결과 저장';
   }
   if (saveMsg) {
     saveMsg.textContent = currentUser ? '' : '로그인하면 기록이 저장됩니다';
@@ -1172,7 +1175,14 @@ async function handleSaveResult() {
     return;
   }
   if (hawkIReviewPromise) {
-    document.getElementById('saveResultMsg').textContent = 'Hawk_I 분석 결과를 기다리는 중...';
+    document.getElementById('saveResultMsg').textContent = '원본 영상을 준비하는 중...';
+    await hawkIReviewPromise;
+  }
+  if (pendingHawkIReview && !lastHawkIResult) {
+    const pendingReview = pendingHawkIReview;
+    pendingHawkIReview = null;
+    document.getElementById('saveResultMsg').textContent = 'Hawk_I 연구 분석을 시작하는 중...';
+    hawkIReviewPromise = startHawkIReview(pendingReview.file, pendingReview.options);
     await hawkIReviewPromise;
   }
   if (lastHawkIResult) lastResultPayload.hawk_i = normalizedHawkIResult(lastHawkIResult);
@@ -2078,6 +2088,8 @@ function drawLiveGraph(W, H) {
 // UPDRS SCORING  (weighted multi-factor)
 // ═══════════════════════════════════════════
 const FACTOR_WEIGHTS = {freq:0.35, arrest:0.25, rhythm:0.15, amp:0.15, fatig:0.10};
+// MDS-UPDRS 3.4: "tap the index finger on the thumb 10 times".
+const PROTOCOL_TAPS = 10;
 const clamp = (v,lo=0,hi=4) => Math.max(lo,Math.min(hi,v));
 
 const UPDRS_DESC = [
@@ -2090,8 +2102,17 @@ const UPDRS_DESC = [
 const UPDRS_COLORS = ['#00ffcc','#88ff44','#ffff00','#ff8800','#ff2244'];
 const UPDRS_LABELS = ['NORMAL','MILD','MODERATE','SEVERE','MAX'];
 
-function scoreUPDRS(taps, arrests, durationSec = 10) {
-  const n = taps.length, freq = n / durationSec;
+// Score the prescribed ten-tap protocol window. Additional taps are retained
+// as supplementary session metrics but must not change the clinical score.
+function scoreUPDRS(allTaps, sessionArrests, durationSec = 10) {
+  const taps = allTaps.length > PROTOCOL_TAPS ? allTaps.slice(0, PROTOCOL_TAPS) : allTaps;
+  const nTotal = allTaps.length;
+  const arrests = nTotal <= PROTOCOL_TAPS
+    ? sessionArrests
+    : taps.slice(1).filter((t, i) => t.t - taps[i].t > ARREST_THRESHOLD).length;
+  const n = taps.length;
+  const spanSec = n >= 2 ? (taps[n - 1].t - taps[0].t) / 1000 : 0;
+  const freq = spanSec > 0 ? (n - 1) / spanSec : 0;
   let iti_cv = 0;
   if(n>=3){const ivs=taps.slice(1).map((t,i)=>t.t-taps[i].t),mean=ivs.reduce((a,b)=>a+b,0)/ivs.length,sd=Math.sqrt(ivs.map(x=>(x-mean)**2).reduce((a,b)=>a+b,0)/ivs.length);iti_cv=mean>0?(sd/mean)*100:0;}
   const maxAmp = n>0 ? Math.max(...taps.map(t=>t.amplitude)) : 0;
@@ -2104,17 +2125,17 @@ function scoreUPDRS(taps, arrests, durationSec = 10) {
   let fatig = 0;
   if(n>=6){const avg=arr=>arr.reduce((a,t)=>a+t.amplitude,0)/arr.length,half=Math.floor(n/2);fatig=Math.max(0,(1-avg(taps.slice(-half))/avg(taps.slice(0,half)))*100);}
   const factors = {
-    freq  : clamp(freq>=5.5?0:freq>=4.0?1:freq>=2.5?2:freq>=1.0?3:4),
+    freq  : clamp(freq>=4.0?0:freq>=3.0?1:freq>=2.0?2:freq>=1.0?3:4),
     arrest: clamp(arrests===0?0:arrests<=2?1:arrests<=5?2:arrests<=8?3:4),
-    rhythm: clamp(n>=3?(iti_cv<15?0:iti_cv<30?1:iti_cv<50?2:iti_cv<70?3:4):0),
+    rhythm: clamp(n>=3?(iti_cv<20?0:iti_cv<35?1:iti_cv<50?2:iti_cv<70?3:4):0),
     // Normalized amplitude (ratio to hand size): 0.45=normal full open, 0.08=barely moving
     amp   : clamp(n>0?(meanAmp>=0.45?0:meanAmp>=0.30?1:meanAmp>=0.18?2:meanAmp>=0.08?3:4):0),
     fatig : clamp(n>=6?(fatig<10?0:fatig<25?1:fatig<45?2:fatig<65?3:4):0),
   };
   const raw = Object.entries(FACTOR_WEIGHTS).reduce((s,[k,w])=>s+factors[k]*w,0);
   const score = clamp(Math.round(raw));
-  const confidence = n>=20?'HIGH':n>=10?'MEDIUM':'LOW';
-  return {score, raw, factors, freq, arrests, iti_cv, fatig, maxAmp, meanAmp, n, confidence};
+  const confidence = n>=PROTOCOL_TAPS?'HIGH':n>=6?'MEDIUM':'LOW';
+  return {score, raw, factors, freq, arrests, iti_cv, fatig, maxAmp, meanAmp, n, nTotal, confidence};
 }
 
 // ═══════════════════════════════════════════
@@ -2144,7 +2165,7 @@ function computeTremorDFT(buffer) {
 // SHOW RESULTS  (shared: live + video)
 // ═══════════════════════════════════════════
 function showResults(durationSec = 10, title = 'UPDRS 3.4 — FINGER TAPPING') {
-  const {score,raw,factors,freq,arrests,iti_cv,fatig,maxAmp,meanAmp,n,confidence} = scoreUPDRS(testData.taps, testData.arrests, durationSec);
+  const {score,raw,factors,freq,arrests,iti_cv,fatig,maxAmp,meanAmp,n,nTotal,confidence} = scoreUPDRS(testData.taps, testData.arrests, durationSec);
   const color = UPDRS_COLORS[score];
   const el = s => document.getElementById(s);
 
@@ -2157,8 +2178,10 @@ function showResults(durationSec = 10, title = 'UPDRS 3.4 — FINGER TAPPING') {
   el('updrsScore').style.textShadow = `0 0 50px ${color}`;
   el('updrsLabel').textContent = `UPDRS 3.4 — ${UPDRS_LABELS[score]}`;
   el('updrsDesc').textContent  = UPDRS_DESC[score];
-  el('resTaps').textContent    = n;
-  el('lblTaps').textContent    = `TAPS / ${durationSec.toFixed(0)}s`;
+  el('resTaps').textContent    = nTotal;
+  el('lblTaps').textContent    = nTotal > n
+    ? `TAPS / ${durationSec.toFixed(0)}s  (${n} SCORED)`
+    : `TAPS / ${durationSec.toFixed(0)}s`;
   el('resFreq').textContent    = freq.toFixed(1);
   el('resArrests').textContent = arrests;
   el('resITI').textContent     = n>=3 ? `${iti_cv.toFixed(0)}%` : '--';
@@ -2193,20 +2216,16 @@ function showResults(durationSec = 10, title = 'UPDRS 3.4 — FINGER TAPPING') {
   });
 
   const confC={HIGH:'#00ffcc',MEDIUM:'#ffff00',LOW:'#ff8800'};
-  const ct=el('confidenceTag'); ct.textContent=`${confidence} CONFIDENCE  (n=${n})`; ct.style.color=confC[confidence]; ct.style.borderColor=confC[confidence];
+  const ct=el('confidenceTag'); ct.textContent=`${confidence} CONFIDENCE  (MDS-UPDRS 3.4 · ${n} taps scored)`; ct.style.color=confC[confidence]; ct.style.borderColor=confC[confidence];
   el('hawkIReview').classList.toggle('hidden-review', appMode !== 'video');
 
   el('resultsOverlay').classList.add('visible');
 
   // Prepare save payload
   setLastResultPayload({
-    assessment_session_id: appMode === 'video'
-      ? (currentAssessmentSessionId || createAssessmentSessionId())
-      : createAssessmentSessionId(),
-    medication_context: appMode === 'video'
-      ? (currentAssessmentMedicationContext || getMedicationContext(new Date()))
-      : getMedicationContext(new Date()),
-    hawk_i: appMode === 'video' && lastHawkIResult ? normalizedHawkIResult(lastHawkIResult) : null,
+    assessment_session_id: currentAssessmentSessionId || createAssessmentSessionId(),
+    medication_context: currentAssessmentMedicationContext || getMedicationContext(new Date()),
+    hawk_i: lastHawkIResult ? normalizedHawkIResult(lastHawkIResult) : null,
     mode: appMode === 'video' ? 'video' : 'live',
     score, raw_score: parseFloat(raw.toFixed(3)),
     n_taps: n, frequency: parseFloat(freq.toFixed(2)),
@@ -2548,6 +2567,8 @@ function startCountdown() {
 }
 function startTest() {
   testState='running';
+  pendingHawkIReview = null;
+  hawkIReviewPromise = null;
   const meta = ASSESS_META[testType] || null;
   trackAnalytics('assessment_started', {
     assessment_mode: 'live',
@@ -2634,7 +2655,22 @@ function prepareHawkIReview(enabled) {
     return;
   }
 
-  setHawkIReviewState('working', 'UPLOADING', '동의한 영상을 Hawk_I 연구 서버로 전송하고 있습니다.');
+  setHawkIReviewState('ready', 'READY TO SAVE', '결과 저장을 누르면 동의한 영상을 Hawk_I 연구 서버로 전송합니다.');
+}
+
+function stageHawkIReview(file, options = {}) {
+  pendingHawkIReview = { file, options };
+  setHawkIReviewState('ready', 'READY TO SAVE', '원본 영상이 준비되었습니다. 결과 저장을 누르면 Hawk_I 연구 분석을 시작합니다.');
+  const saveBtn = document.getElementById('saveResultBtn');
+  if (saveBtn) saveBtn.textContent = '💾 저장 후 HAWK_I 분석';
+}
+
+function discardStagedHawkIReview() {
+  // The recording has only lived in this page's memory. Dropping this
+  // reference prevents a later save action from transmitting it.
+  pendingHawkIReview = null;
+  liveHawkIChunks = [];
+  liveHawkIRecordingDiscarded = true;
 }
 
 function renderHawkIResult(result) {
@@ -2778,6 +2814,9 @@ function prepareLiveHawkIRecording() {
   liveHawkIChunks = [];
   liveHawkIRecordingEnabled = false;
   liveHawkIRecordingError = null;
+  pendingHawkIReview = null;
+  liveHawkIChunks = [];
+  liveHawkIRecordingDiscarded = false;
 
   const consented = testType === 'finger' && document.getElementById('liveHawkIConsent')?.checked;
   if (!consented) return;
@@ -2807,7 +2846,7 @@ function prepareLiveHawkIRecording() {
     liveHawkIRecorder.start(250);
     liveHawkIRecordingEnabled = true;
     prepareHawkIReview(true);
-    setHawkIReviewState('working', 'RECORDING', '원본 카메라 영상을 녹화 중입니다. 검사 종료 후 Hawk_I 연구 분석을 시작합니다.');
+    setHawkIReviewState('working', 'RECORDING', '원본 카메라 영상을 녹화 중입니다. 결과 저장 전까지 이 브라우저에서만 보관합니다.');
     trackAnalytics('hawk_i_live_capture_started', { test_type: 'finger', signed_in: !!currentUser });
   } catch (error) {
     liveHawkIRecordingError = error?.message || '원본 영상 녹화를 시작하지 못했습니다.';
@@ -2828,6 +2867,11 @@ function finishLiveHawkIRecording() {
 
   return new Promise((resolve) => {
     recorder.addEventListener('stop', () => {
+      if (liveHawkIRecordingDiscarded) {
+        liveHawkIChunks = [];
+        resolve(null);
+        return;
+      }
       if (liveHawkIRecordingError || liveHawkIChunks.length === 0) {
         const message = liveHawkIRecordingError || '원본 영상이 비어 있어 Hawk_I 분석을 시작하지 못했습니다.';
         setHawkIReviewState('error', 'UNAVAILABLE', message);
@@ -2842,11 +2886,11 @@ function finishLiveHawkIRecording() {
       resolve(file);
     }, { once: true });
     recorder.stop();
-  }).then(async (file) => {
+  }).then((file) => {
     if (!file) return null;
-    setHawkIReviewState('working', 'UPLOADING', '녹화한 원본 영상을 Hawk_I 연구 서버로 전송하고 있습니다.');
-    trackAnalytics('hawk_i_live_capture_completed', { test_type: 'finger', video_bytes: file.size, signed_in: !!currentUser });
-    return startHawkIReview(file);
+    stageHawkIReview(file);
+    trackAnalytics('hawk_i_live_capture_completed', { test_type: 'finger', video_bytes: file.size, signed_in: !!currentUser, upload_deferred_until_save: true });
+    return file;
   });
 }
 
@@ -2867,9 +2911,10 @@ async function analyzeVideoFile(file) {
   currentAssessmentMedicationContext = getMedicationContext(new Date());
   lastHawkIResult = null;
   hawkIReviewPromise = null;
+  pendingHawkIReview = null;
   const hawkIEnabled = document.getElementById('hawkIConsent').checked;
   prepareHawkIReview(hawkIEnabled);
-  if (hawkIEnabled) hawkIReviewPromise = startHawkIReview(file, { testType: videoTestType });
+  if (hawkIEnabled) stageHawkIReview(file, { testType: videoTestType });
   // Reset
   Object.assign(testData,{taps:[],arrests:0,startTime:0,lastTapT:0,currentMaxDist:0});
   const keys = Object.keys(prevTap).filter(k=>k.startsWith('vid-'));
@@ -4184,11 +4229,13 @@ $('btnVideo').addEventListener('click', ()=>setMode('video'));
 $('testStartBtn').addEventListener('click', startCountdown);
 
 $('testRetryBtn').addEventListener('click',()=>{
+  discardStagedHawkIReview();
   $('resultsOverlay').classList.remove('visible');
   if(appMode==='updrs'){ testState='idle'; $('updrsTestOverlay').classList.remove('hidden'); }
   else if(appMode==='video'){ $('videoDropOverlay').classList.remove('hidden'); }
 });
 $('testDoneBtn').addEventListener('click',()=>{
+  discardStagedHawkIReview();
   $('resultsOverlay').classList.remove('visible');
   testState='idle';
   $('assessSelector').classList.remove('hidden');

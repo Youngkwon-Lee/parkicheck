@@ -46,9 +46,9 @@ test('medication logs use the authenticated Supabase timeline with local fallbac
   assert.match(html, /서버 저장 실패 · 기록은 이 기기에 보관되었습니다/);
 });
 
-test('video analysis preserves a selected gait task for Hawk I review', () => {
+test('video analysis stages a selected gait task for Hawk I review until save', () => {
   assert.match(html, /const videoTestType = testType === 'gait' \? 'gait' : 'finger';/);
-  assert.match(html, /startHawkIReview\(file, \{ testType: videoTestType \}\)/);
+  assert.match(html, /stageHawkIReview\(file, \{ testType: videoTestType \}\)/);
   assert.match(html, /testType: reviewTestType === 'gait' \? 'gait' : 'finger_tapping'/);
   assert.match(html, /function showVideoGaitResearchResult/);
   assert.match(html, /if \(videoTestType === 'gait'\) \{\s*showVideoGaitResearchResult\(file, duration\);/);
@@ -90,13 +90,16 @@ test('saving waits for the consented Hawk I review to finish', () => {
   assert.match(html, /if \(lastResultPayload\) void handleSaveResult\(\)/);
 });
 
-test('a consented live finger-tapping session records the raw camera stream before Hawk I review', () => {
+test('a consented live finger-tapping session stages the raw camera stream until save', () => {
   assert.match(html, /id="liveHawkIConsent"/);
   assert.match(html, /게임 이펙트·화면 UI는 녹화되지 않으며/);
   assert.match(html, /testType === 'finger' && document\.getElementById\('liveHawkIConsent'\)\?\.checked/);
   assert.match(html, /new MediaRecorder\(stream/);
   assert.match(html, /if \(liveHawkIRecordingEnabled\) hawkIReviewPromise = finishLiveHawkIRecording\(\)/);
-  assert.match(html, /return startHawkIReview\(file\)/);
+  assert.match(html, /stageHawkIReview\(file\)/);
+  assert.match(html, /if \(pendingHawkIReview && !lastHawkIResult\)[\s\S]*startHawkIReview\(pendingReview\.file, pendingReview\.options\)/);
+  assert.match(html, /function discardStagedHawkIReview\(\)/);
+  assert.match(html, /\$\('testRetryBtn'\)\.addEventListener\('click',\(\)=>\{\s*discardStagedHawkIReview\(\)/);
 });
 
 test('finger tapping makes near-contact feedback visible without changing the scoring threshold', () => {
@@ -105,6 +108,16 @@ test('finger tapping makes near-contact feedback visible without changing the sc
   assert.match(html, /visual-only\. The clinical tap count still uses/);
   assert.match(html, /drawFingerTapCharge\(landmarks, activeFingers, lx, ly\)/);
   assert.match(html, /const isTap=dist<TAP_THRESH/);
+});
+
+test('finger tapping scores the ten-tap MDS-UPDRS protocol window', () => {
+  assert.match(html, /const PROTOCOL_TAPS = 10/);
+  assert.match(html, /function scoreUPDRS\(allTaps, sessionArrests, durationSec = 10\)/);
+  assert.match(html, /const spanSec = n >= 2/);
+  assert.match(html, /freq>=4\.0\?0:freq>=3\.0\?1:freq>=2\.0\?2/);
+  assert.match(html, /iti_cv<20\?0:iti_cv<35\?1/);
+  assert.match(html, /nTotal > n/);
+  assert.match(html, /MDS-UPDRS 3\.4 · \$\{n\} taps scored/);
 });
 
 test('every result gets a fresh canonical save contract and resets the save action', () => {
