@@ -709,7 +709,7 @@
         <p id="hawkIReviewStatus" class="hawk-review-status">ParkiCheck 기기 내 분석만 사용했습니다.</p>
         <div id="hawkIReviewResult" class="hawk-review-grid" hidden>
           <div class="hawk-review-metric"><div id="hawkIOutcome" class="hawk-review-value">—</div><div class="hawk-review-label">MOVEMENT SIGNAL</div><span id="hawkIScoreDetail" class="hawk-review-detail"></span></div>
-          <div class="hawk-review-metric"><div id="hawkIQuality" class="hawk-review-value">—</div><div class="hawk-review-label">VIDEO QUALITY</div><span id="hawkIQualityDetail" class="hawk-review-detail"></span></div>
+          <div class="hawk-review-metric"><div id="hawkIQuality" class="hawk-review-value">—</div><div class="hawk-review-label">REVIEW STATUS</div><span id="hawkIQualityDetail" class="hawk-review-detail"></span></div>
         </div>
         <p id="hawkIAdvisory" class="hawk-review-advisory"></p>
         <p class="hawk-review-boundary">연구 보조 관측치입니다. 진단·자동 처방이 아니며 Kinelo로 자동 전송되지 않습니다. 최종 해석은 담당자가 검토합니다.</p>
@@ -2659,7 +2659,9 @@ function setHawkIReviewState(state, badge, message) {
   const badgeEl = document.getElementById('hawkIReviewBadge');
   panel.classList.remove('hidden-review');
   badgeEl.dataset.state = state;
-  badgeEl.textContent = badge;
+  // Keep copied/read-aloud text from collapsing the brand and status into one
+  // word while retaining the compact visual badge.
+  badgeEl.textContent = `· ${badge}`;
   document.getElementById('hawkIReviewStatus').textContent = message;
 }
 
