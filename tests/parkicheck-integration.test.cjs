@@ -137,6 +137,9 @@ test('finger tapping presents observational metrics instead of a local ordinal g
   assert.match(html, /FINGER TAPPING · RESEARCH LOG/);
   assert.match(html, /function fingerRecordFeedback\(n\)/);
   assert.match(html, /잘했어요! 수행 기록이 저장될 준비가 됐어요/);
+  assert.match(html, /REVIEW STATUS/);
+  assert.doesNotMatch(html, /VIDEO QUALITY/);
+  assert.match(html, /badgeEl\.textContent = `· \$\{badge\}`/);
 });
 
 test('every result gets a fresh canonical save contract and resets the save action', () => {
