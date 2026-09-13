@@ -39,13 +39,18 @@
     };
   }
 
-  function buildActivitySessionRow(payload, identity) {
+  function buildActivitySessionRow(payload, identity, options = {}) {
     const context = buildAssessmentContext(payload, identity);
     const assessmentSessionId = context.assessment_session_id;
     const personId = context.subject_person_id;
     const organizationId = context.organization_id;
     const createdBy = context.created_by_person_id;
     const duration = finiteNumber(payload?.duration_sec);
+
+    const status = options.status || 'completed';
+    if (!['planned', 'in_progress', 'completed', 'cancelled', 'skipped'].includes(status)) {
+      throw new Error('invalid activity session status');
+    }
 
     const row = {
       id: assessmentSessionId,
@@ -54,7 +59,7 @@
       created_by: createdBy,
       activity_type: 'assessment',
       source: 'camera',
-      status: 'completed',
+      status,
       performed_at: assessmentTimestamp(payload),
       metrics: {
         app_source: 'parkicheck',
