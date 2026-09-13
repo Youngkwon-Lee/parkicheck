@@ -81,3 +81,9 @@ test('history and admin chart canvases do not block their controls', () => {
   assert.match(html, /#historyOverlay\s*\{[^}]*z-index\s*:\s*108/);
   assert.match(html, /#adminOverlay\s*\{[^}]*z-index\s*:\s*109/);
 });
+
+test('admin UI uses immutable app metadata instead of an email allowlist', () => {
+  assert.match(html, /currentUser\?\.app_metadata\?\.role === 'admin'/);
+  assert.match(html, /if \(!isCurrentUserAdmin\(\)\) return/);
+  assert.doesNotMatch(html, /ADMIN_EMAIL|kwon3856@gmail\.com/);
+});
