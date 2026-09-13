@@ -900,14 +900,16 @@ function enterExperience() {
   else { switchAuthTab('login'); auth.classList.remove('hidden'); }
 }
 
-const ADMIN_EMAIL = 'kwon3856@gmail.com';
+function isCurrentUserAdmin() {
+  return currentUser?.app_metadata?.role === 'admin';
+}
 
 function updateAuthUI() {
   const pb = document.getElementById('profileBadge');
   if (currentUser) {
     pb.classList.remove('hidden');
     document.getElementById('profileEmail').textContent = currentUser.email;
-    document.getElementById('pmenuAdmin').style.display = currentUser.email === ADMIN_EMAIL ? '' : 'none';
+    document.getElementById('pmenuAdmin').style.display = isCurrentUserAdmin() ? '' : 'none';
   } else {
     pb.classList.add('hidden');
   }
@@ -1362,7 +1364,7 @@ function generateReport() {
 // ADMIN DASHBOARD
 // ═══════════════════════════════════════════
 async function showAdmin() {
-  if(currentUser?.email !== ADMIN_EMAIL) return;
+  if (!isCurrentUserAdmin()) return;
   document.getElementById('profileMenu').classList.remove('open');
   document.getElementById('adminOverlay').classList.remove('hidden');
   // Reset to loading state
@@ -1374,7 +1376,7 @@ async function showAdmin() {
 
   const { data, error } = await supa.rpc('admin_get_stats');
   if(error){
-    document.getElementById('adminByType').innerHTML=`<div class="hist-empty" style="font-size:0.7rem">오류: ${error.message}<br><small>Supabase SQL Editor에서 <code>supabase/migrations/20260525130625_admin_get_stats.sql</code> 내용을 실행해주세요.</small></div>`;
+    document.getElementById('adminByType').innerHTML=`<div class="hist-empty" style="font-size:0.7rem">오류: ${error.message}<br><small>관리자 권한과 <code>supabase/migrations/20260526031115_admin_get_stats.sql</code> 적용 상태를 확인해 주세요.</small></div>`;
     return;
   }
   renderAdminDashboard(data);
