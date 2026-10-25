@@ -41,9 +41,18 @@ Android:
     npx cap sync android
     npx cap open android
 
-Xcode 26+ is required for Capacitor 8. Android Gradle build needs a JDK
-and Android SDK; the original MacBook check found no usable Java runtime.
-The platforms are developer projects, not signed or store-published binaries.
+Xcode 26+ is required for Capacitor 8. Android requires Android SDK 36 and
+JDK 21. On the MacBook, Java 21 is installed outside the default shell PATH.
+Use this process-scoped environment; do not change system Java:
+
+    export JAVA_HOME=/opt/homebrew/opt/openjdk@21
+    export PATH="$JAVA_HOME/bin:$PATH"
+    export ANDROID_HOME="$HOME/Library/Android/sdk"
+    cd mobile/android
+    ./gradlew :app:assembleDebug --no-daemon --console=plain
+
+The resulting Android APK is a debug build. iPhoneOS developer signing works,
+but neither app has been signed for public distribution or store release.
 
 ## Release gates
 
@@ -57,13 +66,44 @@ The platforms are developer projects, not signed or store-published binaries.
 
 Do not present REVIEW READY as clinical approval.
 
-## First verified development check (2026-10-26)
+## Latest device/build evidence (2026-10-26 KST)
 
-- Source test suite: 47/47 passed after URL-query hardening.
-- iOS: Xcode 27.1 simulator build succeeded; installed and launched in the
-  iPhone Duo simulator, then simulator shut down (no persistent background run).
-- Unverified: simulator UI rendering, physical camera tracking, repeated measure
-  accuracy, consented Hawk_I server result, TestFlight signing and store review.
-- Android: generated native project and copied static assets; Gradle SDK sync
-  reported no usable Java runtime. APK/aab was not built.
-- Production: no deploy, no existing patient records touched.
+Evidence source commit: 78ff183d2726b5197b568fdda8e3fd59140e5b42.
+This documentation update does not modify runtime code.
+
+- Existing and new static tests: 47/47 pass.
+- Xcode 27.1: iPhoneOS Debug build signed using an existing Apple
+  Development identity and wildcard development provisioning profile.
+  The app was installed and launched on a paired iPhone 12 Pro running
+  iOS 27.0.1 with Developer Mode enabled. No distribution signing.
+- Physical iPhone app UI: unverified. A remote screenshot was black.
+  Display-off/capture restriction vs. app rendering was not resolved.
+  Process launch alone is not proof that camera or screen works.
+- iOS Simulator: build, install and process launch succeeded. Screenshots
+  showed startup/setup screens; proper ParkiCheck UI rendering was not
+  confirmed in the simulator.
+- Android: :app:assembleDebug BUILD SUCCESSFUL with OpenJDK 21 and
+  Android SDK 36; 4.2 MB app-debug.apk created in
+  mobile/android/app/build/outputs/apk/debug/ (ignored from Git).
+  Package id is kr.co.kinelo.parkicheck, targetSdkVersion 36;
+  APK Signature v2 verification passed. No Android phone connected.
+- Production website unchanged. The PWA service worker is not live.
+- No patient records, captured health videos, or third-party research
+  data were used. PR #8 remains Draft and unmerged.
+
+## Physical iPhone camera check still requiring user interaction
+
+1. Unlock the paired iPhone 12 Pro and open ParkiCheck.
+2. Confirm that the landing screen and research-only disclaimer appear.
+   If black/blank, stop and record the symptom before camera access.
+3. Select 로그인 없이 체험, then UPDRS 3.4 / FINGER TAPPING.
+4. Keep optional Hawk_I video transfer OFF. Approve camera access only
+   for a consenting volunteer; no patient or identifying data.
+5. In good light, tap index finger and thumb for 10 seconds.
+   Confirm moving hand landmarks, final observational metrics, and
+   approximate agreement of tap count with a human reference.
+6. Reopen the app and verify no unexpected raw-video upload or storage.
+   Record pass/fail, not personally identifying images.
+
+None of the physical camera checks above has been marked PASS.
+Neither Apple App Store nor Google Play release is authorized.
