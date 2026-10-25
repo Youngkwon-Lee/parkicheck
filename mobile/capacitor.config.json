@@ -1,0 +1,8 @@
+{
+  "appId": "kr.co.kinelo.parkicheck",
+  "appName": "ParkiCheck",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  }
+}

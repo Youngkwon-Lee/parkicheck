@@ -300,6 +300,12 @@
     .admin-score-bar { height:100%; border-radius:3px; }
     .admin-score-cnt { font-size:0.62rem; color:rgba(255,255,255,0.45); min-width:22px; text-align:right; }
   </style>
+  <meta name="theme-color" content="#03030a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="ParkiCheck">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
 </head>
 <body>
 <div id="container">
@@ -4330,5 +4336,15 @@ dropZone.addEventListener('drop', e=>{
   if(f && f.type.startsWith('video/')) analyzeVideoFile(f);
 });
 </script>
+  <script>
+    // Native Capacitor ships the same public assets. PWA cache is browser-only.
+    if ('serviceWorker' in navigator && location.protocol === 'https:' &&
+        location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/service-worker.js', { scope: '/' })
+          .catch((error) => console.warn('ParkiCheck public-shell cache unavailable', error));
+      });
+    }
+  </script>
 </body>
 </html>
