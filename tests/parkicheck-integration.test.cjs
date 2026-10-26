@@ -48,7 +48,7 @@ test('medication logs use the authenticated Supabase timeline with local fallbac
 
 test('video analysis stages a selected gait task for Hawk I review until save', () => {
   assert.match(html, /const videoTestType = testType === 'gait' \? 'gait' : 'finger';/);
-  assert.match(html, /stageHawkIReview\(file, \{ testType: videoTestType \}\)/);
+  assert.match(html, /stageHawkIReview\(file, \{ testType: testType === 'gait'/);
   assert.match(html, /testType: reviewTestType === 'gait' \? 'gait' : 'finger_tapping'/);
   assert.match(html, /function showVideoGaitResearchResult/);
   assert.match(html, /if \(videoTestType === 'gait'\) \{\s*showVideoGaitResearchResult\(file, duration\);/);
@@ -66,7 +66,7 @@ test('Hawk I review reserves an authenticated in-progress activity session befor
   assert.match(html, /status: 'in_progress'/);
   assert.match(html, /from\('activity_sessions'\)[\s\S]*upsert\(sessionRow, \{ onConflict: 'id' \}\)/);
   assert.match(html, /await reserveHawkIActivitySession\(\{/);
-  assert.match(html, /task_code: isGait \? 'UPDRS_3_9' : 'UPDRS_3_4'/);
+  assert.match(html, /task_code: isGait .* 'GAIT_RESEARCH'/);
 });
 
 test('login resets the prior identity context before opening the assessment', () => {
@@ -95,10 +95,11 @@ test('a consented live finger-tapping session stages the raw camera stream until
   assert.match(html, /게임 이펙트·화면 UI는 녹화되지 않으며/);
   assert.match(html, /이 브라우저에만 임시 보관합니다/);
   assert.match(html, /‘저장 후 HAWK_I 분석’을 눌렀을 때에만 Hawk_I 연구 서버로 전송합니다/);
-  assert.match(html, /testType === 'finger' && document\.getElementById\('liveHawkIConsent'\)\?\.checked/);
+  assert.match(html, /testType === 'finger' .* testType === 'gait'/);
+  assert.match(html, /document\.getElementById\('liveHawkIConsent'\)\?\.checked/);
   assert.match(html, /new MediaRecorder\(stream/);
   assert.match(html, /if \(liveHawkIRecordingEnabled\) hawkIReviewPromise = finishLiveHawkIRecording\(\)/);
-  assert.match(html, /stageHawkIReview\(file\)/);
+  assert.match(html, /stageHawkIReview\(file, \{ testType: testType === 'gait'/);
   assert.match(html, /if \(pendingHawkIReview && !lastHawkIResult\)[\s\S]*startHawkIReview\(pendingReview\.file, pendingReview\.options\)/);
   assert.match(html, /saveBtn\.textContent = pendingHawkIReview \? '💾 저장 후 HAWK_I 분석' : '💾 결과 저장';/);
   assert.match(html, /function discardStagedHawkIReview\(\)/);
