@@ -27,6 +27,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
   <script src="./camera-facing.js"></script>
+  <script src="./gait-research.js"></script>
   <script src="./hawk-i-client.js"></script>
   <script src="./medication-events.js"></script>
   <script src="./medication-comparison.js"></script>
@@ -724,6 +725,7 @@
           <div class="hawk-review-metric"><div id="hawkIQuality" class="hawk-review-value">—</div><div class="hawk-review-label">REVIEW STATUS</div><span id="hawkIQualityDetail" class="hawk-review-detail"></span></div>
         </div>
         <p id="hawkIAdvisory" class="hawk-review-advisory"></p>
+        <a id="hawkIResultLink" href="#" target="_blank" rel="noopener noreferrer" hidden style="display:none;color:#00ffcc;font-size:0.78rem;text-decoration:underline;padding:12px 0">HawkEye 연구 분석 대시보드에서 보기</a>
         <p class="hawk-review-boundary">연구 보조 관측치입니다. 진단·자동 처방이 아니며 Kinelo로 자동 전송되지 않습니다. 최종 해석은 담당자가 검토합니다.</p>
       </section>
       <div id="saveResultRow" style="margin-bottom:12px;display:flex;gap:8px;justify-content:center">
@@ -1135,6 +1137,7 @@ async function saveResultToDb(payload) {
   msgEl.textContent = '저장 중...';
 
   const { personId, orgId } = await bootstrapPersonalContext();
+  const unscoredGait = payload?.factors?.test_type === 'gait' && payload.score == null;
   let error;
 
   if (personId && orgId) {
@@ -1148,7 +1151,9 @@ async function saveResultToDb(payload) {
           .from('activity_sessions')
           .upsert(sessionRow, { onConflict: 'id' }));
 
-        if (!error) {
+        // An unscored gait observation belongs to the research activity
+        // session, never a clinical integer-valued score observation.
+        if (!error && !unscoredGait) {
           const observationRow = window.ParkiAssessmentSession.buildObservationRow(
             payload,
             identity,
@@ -1162,6 +1167,8 @@ async function saveResultToDb(payload) {
         error = saveError;
       }
     }
+  } else if (unscoredGait) {
+    error = new Error('보행 관찰을 저장할 개인 타임라인이 없습니다. 로그인 계정 연결을 확인해 주세요.');
   } else {
     // Fallback: legacy table (no org/person required)
     ({ error } = await supa.from('updrs_results').insert({
@@ -2283,7 +2290,7 @@ function showResults(durationSec = 10, title = 'UPDRS 3.4 — FINGER TAPPING') {
 function showVideoGaitResearchResult(file, durationSec) {
   const el = s => document.getElementById(s);
   setFingerRecordPresentation(false);
-  el('resultsTitleH2').textContent = `UPDRS 3.9 — GAIT · ${file.name.split('.')[0]}`;
+  el('resultsTitleH2').textContent = `GAIT · RESEARCH REVIEW · ${file.name.split('.')[0]}`;
   el('updrsScore').textContent = '—';
   el('updrsScore').style.color = '#00ffcc';
   el('updrsScore').style.textShadow = '0 0 50px #00ffcc';
@@ -2551,7 +2558,7 @@ const ASSESS_META = {
   leg:          {num:'3.8',  name:'LEG AGILITY',           color:'#ffee00', desc:'카메라가 무릎을 볼 수 있게 위치시키세요.\n무릎을 최대한 높이 들었다가\n빠르게 내리는 동작을 10초간 반복하세요.'},
   actiontremor: {num:'3.15', name:'ACTION TREMOR',         color:'#ff6b9d', desc:'팔을 앞으로 수평으로 뻗어 15초간 유지하세요.\n손목이 카메라에 잘 보이게 위치시키세요.\n최대한 힘을 빼고 자연스럽게 유지합니다.'},
   posture:      {num:'3.12', name:'POSTURE',               color:'#4fc3f7', desc:'카메라 앞 정면에 자연스럽게 서세요.\n상체(머리~허리)가 모두 보이게 위치시키세요.\n15초간 평소 자세를 유지합니다.'},
-  gait:         {num:'3.9',  name:'GAIT',                  color:'#fb923c', desc:'카메라 앞에서 좌우로 천천히 걸으세요.\n전신(머리~발목)이 보이게 위치시키세요.\n20초간 평소 걸음 속도로 걷습니다.'},
+  gait:         {num:'3.10',  name:'GAIT',                  color:'#fb923c', desc:'카메라 앞에서 좌우로 천천히 걸으세요.\n전신(머리~발목)이 보이게 위치시키세요.\n20초간 평소 걸음 속도로 걷습니다.'},
   face:         {num:'3.2',  name:'FACIAL EXPRESSION',     color:'#e879f9', desc:'카메라 정면을 바라보세요.\n얼굴 전체(이마~턱)가 잘 보이게 위치시키세요.\n평소처럼 자연스럽게 15초간 유지합니다.'},
 };
 function selectAssessment(type) {
@@ -2583,7 +2590,7 @@ function selectAssessment(type) {
   document.getElementById('timerText').textContent = durSec;
 
   const ol = document.getElementById('updrsTestOverlay');
-  document.getElementById('liveHawkIConsentRow').style.display = type === 'finger' ? '' : 'none';
+  document.getElementById('liveHawkIConsentRow').style.display = (type === 'finger' || type === 'gait') ? '' : 'none';
   ol.querySelector('.ov-h2').textContent = `UPDRS ${m.num}`;
   ol.querySelector('.ov-sub').textContent = m.name;
   ol.querySelector('.ov-p').innerHTML = m.desc.replace(/\n/g,'<br>');
@@ -2694,6 +2701,10 @@ function prepareHawkIReview(enabled) {
   const advisory = document.getElementById('hawkIAdvisory');
   result.hidden = true;
   advisory.textContent = '';
+  const link = document.getElementById('hawkIResultLink');
+  link.hidden = true;
+  link.style.display = 'none';
+  link.removeAttribute('href');
 
   if (!enabled) {
     setHawkIReviewState('idle', 'NOT SENT', '전송 동의가 없어 ParkiCheck 기기 내 분석만 수행했습니다.');
@@ -2742,6 +2753,17 @@ function renderHawkIResult(result) {
     : '최종 해석은 담당자가 확인합니다.';
   document.getElementById('hawkIAdvisory').textContent = summary.advisory;
   document.getElementById('hawkIReviewResult').hidden = false;
+  const resultLink = document.getElementById('hawkIResultLink');
+  const dashboardUrl = window.ParkiGaitResearch?.hawkIResultUrl(result?.id || result?.video_id);
+  if (dashboardUrl) {
+    resultLink.href = dashboardUrl;
+    resultLink.hidden = false;
+    resultLink.style.display = 'inline-block';
+  } else {
+    resultLink.hidden = true;
+    resultLink.style.display = 'none';
+    resultLink.removeAttribute('href');
+  }
   if (summary.score === null) {
     setHawkIReviewState('done', 'MANUAL REVIEW', '자동 점수가 생성되지 않아 원본 관측과 품질 상태를 담당자가 검토해야 합니다.');
   } else {
@@ -2769,9 +2791,9 @@ async function reserveHawkIActivitySession({ assessmentSessionId, personId, orgI
       hawk_i: null,
     },
     exercise_log: {
-      task_code: isGait ? 'UPDRS_3_9' : 'UPDRS_3_4',
+      task_code: isGait ? 'GAIT_RESEARCH' : 'UPDRS_3_4',
       task_display: isGait
-        ? 'UPDRS Part III Item 3.9 - Gait'
+        ? 'Unscored gait research observation (MDS-UPDRS 3.10 context)'
         : 'UPDRS Part III Item 3.4 - Finger Tapping',
     },
     notes: 'ParkiCheck research review in progress',
@@ -2878,7 +2900,7 @@ function prepareLiveHawkIRecording() {
   liveHawkIChunks = [];
   liveHawkIRecordingDiscarded = false;
 
-  const consented = testType === 'finger' && document.getElementById('liveHawkIConsent')?.checked;
+  const consented = (testType === 'finger' || testType === 'gait') && document.getElementById('liveHawkIConsent')?.checked;
   if (!consented) return;
 
   currentAssessmentSessionId = createAssessmentSessionId();
@@ -2907,7 +2929,7 @@ function prepareLiveHawkIRecording() {
     liveHawkIRecordingEnabled = true;
     prepareHawkIReview(true);
     setHawkIReviewState('working', 'RECORDING', '원본 카메라 영상을 녹화 중입니다. 결과 저장 전까지 이 브라우저에서만 보관합니다.');
-    trackAnalytics('hawk_i_live_capture_started', { test_type: 'finger', signed_in: !!currentUser });
+    trackAnalytics('hawk_i_live_capture_started', { test_type: testType, signed_in: !!currentUser });
   } catch (error) {
     liveHawkIRecordingError = error?.message || '원본 영상 녹화를 시작하지 못했습니다.';
     setHawkIReviewState('error', 'UNAVAILABLE', liveHawkIRecordingError);
@@ -2948,8 +2970,8 @@ function finishLiveHawkIRecording() {
     recorder.stop();
   }).then((file) => {
     if (!file) return null;
-    stageHawkIReview(file);
-    trackAnalytics('hawk_i_live_capture_completed', { test_type: 'finger', video_bytes: file.size, signed_in: !!currentUser, upload_deferred_until_save: true });
+    stageHawkIReview(file, { testType: testType === 'gait' ? 'gait' : 'finger' });
+    trackAnalytics('hawk_i_live_capture_completed', { test_type: testType, video_bytes: file.size, signed_in: !!currentUser, upload_deferred_until_save: true });
     return file;
   });
 }
@@ -3627,80 +3649,97 @@ function detectGait(poseLandmarks) {
 
 function scoreGait(dur) {
   const n=gaitSteps.length;
+  const leftN=gaitSteps.filter(step=>step.foot==='left').length;
+  const rightN=gaitSteps.filter(step=>step.foot==='right').length;
+  const quality=window.ParkiGaitResearch?.evaluateCoverage(gaitSteps,dur) || {
+    sufficient:false, reason:'걸음 추적 품질을 판단할 수 없습니다.', spanSeconds:0,
+  };
   const cadencePM=n>0?(n/dur)*60:0;
-  const leftN=gaitSteps.filter(s=>s.foot==='left').length;
-  const rightN=gaitSteps.filter(s=>s.foot==='right').length;
-  const asymmetry=(leftN>0&&rightN>0)?Math.abs(leftN-rightN)/Math.max(leftN,rightN):1;
-  // Step timing variability
-  let stepCV=0;
-  if(n>=4){const gaps=gaitSteps.slice(1).map((s,i)=>s.t-gaitSteps[i].t);const mean=gaps.reduce((a,b)=>a+b,0)/gaps.length;const sd=Math.sqrt(gaps.map(x=>(x-mean)**2).reduce((a,b)=>a+b,0)/gaps.length);stepCV=mean>0?(sd/mean)*100:0;}
-  // Arm swing asymmetry
-  let armAsym=0;
-  if(gaitArmSwings.length>=10){const avgL=gaitArmSwings.reduce((a,s)=>a+s.leftAmp,0)/gaitArmSwings.length;const avgR=gaitArmSwings.reduce((a,s)=>a+s.rightAmp,0)/gaitArmSwings.length;armAsym=Math.abs(avgL-avgR)/Math.max(avgL,avgR,0.001);}
-  const cadenceScore=cadencePM>=90?0:cadencePM>=70?1:cadencePM>=50?2:cadencePM>=25?3:4;
-  const asymScore=asymmetry<0.15?0:asymmetry<0.30?1:asymmetry<0.50?2:asymmetry<0.70?3:4;
-  const cvScore=stepCV<20?0:stepCV<40?1:stepCV<60?2:stepCV<80?3:4;
-  const armScore=armAsym<0.20?0:armAsym<0.40?1:armAsym<0.60?2:armAsym<0.80?3:4;
-  const raw=cadenceScore*0.45+asymScore*0.25+cvScore*0.20+armScore*0.10;
-  const score=clamp(Math.round(raw));
-  const confidence=n>=20?'HIGH':n>=8?'MEDIUM':'LOW';
-  return {score,cadencePM,asymmetry,stepCV,armAsym,leftN,rightN,n,confidence,factors:{cadenceScore,asymScore,cvScore,armScore}};
+  const asymmetry=(leftN>0&&rightN>0)?Math.abs(leftN-rightN)/Math.max(leftN,rightN):null;
+  const ordered=[...gaitSteps].sort((a,b)=>a.t-b.t);
+  const gaps=ordered.slice(1).map((step,i)=>step.t-ordered[i].t).filter(v=>v>0);
+  let stepCV=null;
+  if(gaps.length>=3){
+    const mean=gaps.reduce((a,b)=>a+b,0)/gaps.length;
+    const sd=Math.sqrt(gaps.reduce((sum,v)=>sum+(v-mean)**2,0)/gaps.length);
+    stepCV=mean>0?(sd/mean)*100:null;
+  }
+  let armAsym=null;
+  if(gaitArmSwings.length>=10){
+    const avgL=gaitArmSwings.reduce((sum,p)=>sum+p.leftAmp,0)/gaitArmSwings.length;
+    const avgR=gaitArmSwings.reduce((sum,p)=>sum+p.rightAmp,0)/gaitArmSwings.length;
+    armAsym=Math.abs(avgL-avgR)/Math.max(avgL,avgR,0.001);
+  }
+  // Research-only kinematics: step counts and side visibility cannot establish
+  // independence, assistance needs, turning or heel strike. Never report 0-4
+  // as an MDS-UPDRS gait grade from this simple camera estimator.
+  return {
+    score:null, quality, n,leftN,rightN,cadencePM,asymmetry,stepCV,armAsym,
+    confidence:quality.sufficient?'OBSERVED':'INSUFFICIENT',
+  };
 }
-
 function showGaitResults() {
   const dur=(TEST_DURATIONS.gait||20000)/1000;
-  const {score,cadencePM,asymmetry,stepCV,armAsym,leftN,rightN,n,confidence,factors}=scoreGait(dur);
-  const color=UPDRS_COLORS[score];
-  const FC=['#00ffcc','#88ff44','#ffff00','#ff8800','#ff2244'];
-  const el=s=>document.getElementById(s);
-  el('resultsTitleH2').textContent='UPDRS 3.9 — GAIT';
-  el('updrsScore').textContent=score;
-  el('updrsScore').style.color=color;
-  el('updrsScore').style.textShadow=`0 0 50px ${color}`;
-  el('updrsLabel').textContent=`GAIT — ${UPDRS_LABELS[score]}`;
-  el('updrsDesc').textContent=UPDRS_DESC[score];
+  const data=scoreGait(dur);
+  const {quality,n,leftN,rightN,cadencePM,asymmetry,stepCV,armAsym,confidence}=data;
+  const el=id=>document.getElementById(id);
+  setFingerRecordPresentation(false);
+  el('resultsTitleH2').textContent='GAIT · RESEARCH OBSERVATION';
+  el('updrsScore').textContent='—';
+  el('updrsScore').style.color='#00ffcc';
+  el('updrsScore').style.textShadow='none';
+  el('updrsLabel').textContent='CLINICAL GRADE NOT ASSIGNED';
+  el('updrsDesc').textContent=quality.reason;
   el('resTaps').textContent=n;
-  el('lblTaps').textContent=`STEPS / ${dur}s`;
-  el('resFreq').textContent=cadencePM.toFixed(0);
-  el('resArrests').textContent=`L:${leftN} R:${rightN}`;
-  el('resITI').textContent=n>=4?`${stepCV.toFixed(0)}%`:'--';
-  el('resMaxAmp').textContent=`${(asymmetry*100).toFixed(0)}`;
-  el('resFatig').textContent=`${(armAsym*100).toFixed(0)}%`;
-  // Step timeline
-  const chartEl=el('ampChart'); chartEl.innerHTML='';
-  if(gaitSteps.length>0){
-    const maxLift=Math.max(...gaitSteps.map(s=>s.lift),0.01);
-    gaitSteps.forEach(s=>{
-      const pct=(s.lift/maxLift)*100;
-      const c=s.foot==='left'?'#fb923c':'#ffee00';
-      const b=document.createElement('div'); b.className='amp-bar';
-      b.style.cssText=`height:${pct}%;background:${c};box-shadow:0 0 4px ${c};`;
-      chartEl.appendChild(b);
+  el('lblTaps').textContent='STEPS DETECTED / '+dur+'s';
+  el('resFreq').textContent=quality.sufficient?cadencePM.toFixed(0):'—';
+  el('resArrests').textContent='L:'+leftN+' R:'+rightN;
+  el('resITI').textContent=quality.sufficient&&stepCV!==null?stepCV.toFixed(0)+'%':'—';
+  el('resMaxAmp').textContent=quality.sufficient&&asymmetry!==null?(asymmetry*100).toFixed(0):'—';
+  el('resFatig').textContent=quality.sufficient&&armAsym!==null?(armAsym*100).toFixed(0)+'%':'—';
+  const chartEl=el('ampChart');
+  chartEl.innerHTML='';
+  if(gaitSteps.length){
+    const maxLift=Math.max(...gaitSteps.map(item=>item.lift),0.01);
+    gaitSteps.forEach(step=>{
+      const bar=document.createElement('div');
+      bar.className='amp-bar';
+      bar.style.cssText='height:'+((step.lift/maxLift)*100)+'%;background:'+
+        (step.foot==='left'?'#fb923c':'#ffee00')+';';
+      chartEl.appendChild(bar);
     });
   }
-  [['freq',factors.cadenceScore],['arrest',factors.asymScore],['rhythm',factors.cvScore],['amp',factors.armScore],['fatig',score]].forEach(([id,fs])=>{
-    const c=FC[Math.min(fs,4)];
-    el(`fb-${id}`).style.width=`${(fs/4)*100}%`; el(`fb-${id}`).style.background=c; el(`fb-${id}`).style.boxShadow=`0 0 6px ${c}`;
-    el(`fs-${id}`).textContent=`${fs}/4`; el(`fs-${id}`).style.color=c;
-  });
-  const confC={HIGH:'#00ffcc',MEDIUM:'#ffff00',LOW:'#ff8800'};
-  const ct=el('confidenceTag'); ct.textContent=`${confidence} CONFIDENCE  (n=${n})`; ct.style.color=confC[confidence]; ct.style.borderColor=confC[confidence];
-  el('fatigVal').textContent=`케이던스 ${cadencePM.toFixed(0)} steps/min  좌우비대칭 ${(asymmetry*100).toFixed(0)}%`;
-  el('fatigVal').style.color=color;
+  el('ampChartWrap').style.display='';
+  el('factorBreakdown').style.display='none';
+  const label=el('confidenceTag');
+  label.textContent=quality.sufficient?'GAIT OBSERVED · NOT CLINICALLY GRADED':'INSUFFICIENT TRACKING · RETAKE';
+  label.style.color='#00ffcc';
+  label.style.borderColor='#00ffcc';
+  el('fatigVal').textContent=quality.reason;
+  el('fatigVal').style.color='#00ffcc';
+  el('hawkIReview').classList.toggle('hidden-review',!pendingHawkIReview&&!liveHawkIRecordingEnabled);
   el('resultsOverlay').classList.add('visible');
   setLastResultPayload({
-    mode:'live', score, raw_score:parseFloat((cadencePM/100).toFixed(3)),
-    n_taps:n, frequency:parseFloat(cadencePM.toFixed(1)),
-    arrests:0, iti_cv:parseFloat(stepCV.toFixed(1)),
-    max_amplitude:parseFloat(asymmetry.toFixed(4)), fatigability:parseFloat((armAsym*100).toFixed(1)),
+    mode:'live', score:null, raw_score:null,
+    n_taps:n, frequency:quality.sufficient?Number(cadencePM.toFixed(1)):null,
+    arrests:null, iti_cv:stepCV===null?null:Number(stepCV.toFixed(1)),
+    max_amplitude:asymmetry===null?null:Number(asymmetry.toFixed(4)),
+    fatigability:armAsym===null?null:Number((armAsym*100).toFixed(1)),
     confidence, duration_sec:dur,
-    factors:{test_type:'gait', cadence_pm:parseFloat(cadencePM.toFixed(1)), asymmetry:parseFloat(asymmetry.toFixed(3)), step_cv:parseFloat(stepCV.toFixed(1)), arm_asym:parseFloat(armAsym.toFixed(3))},
+    factors:{
+      test_type:'gait', local_scoring:'not_clinically_validated',
+      capture_quality:quality.sufficient?'observable':'insufficient',
+      left_steps:leftN,right_steps:rightN,observed_span_sec:quality.spanSeconds,
+      cadence_pm:Number(cadencePM.toFixed(1)),
+      asymmetry:asymmetry===null?null:Number(asymmetry.toFixed(3)),
+      step_cv:stepCV===null?null:Number(stepCV.toFixed(1)),
+      arm_asym:armAsym===null?null:Number(armAsym.toFixed(3)),
+    },
   });
-  const saveBtn=el('saveResultBtn'), saveMsg=el('saveResultMsg');
-  saveBtn.style.display=''; saveBtn.disabled=false;
-  saveMsg.textContent=''; saveMsg.style.color='';
-  if(!currentUser) saveMsg.textContent='로그인하면 기록이 저장됩니다';
-  onSeqTestComplete(score);
+  el('saveResultBtn').style.display='';
+  el('saveResultBtn').disabled=false;
+  el('saveResultMsg').textContent=currentUser?'':'로그인하면 관찰 기록이 저장됩니다';
+  onSeqTestComplete(null);
 }
 
 // ═══════════════════════════════════════════
@@ -4355,20 +4394,22 @@ function onSeqTestComplete(score) {
 }
 function showSeqSummary() {
   seqMode=false;
-  const total=Object.values(seqScores).reduce((a,b)=>a+b,0);
+  const hasUnscored=Object.values(seqScores).some(value=>value===null);
+  const total=hasUnscored?null:Object.values(seqScores).reduce((a,b)=>a+b,0);
   const max=FULL_SEQUENCE.length*4;
-  const pct=Math.round((total/max)*100);
-  const sev=total<=4?'정상':total<=10?'경미':total<=20?'중등도':total<=30?'심각':'최중증';
-  const col=total<=4?'#00ffcc':total<=10?'#88ff44':total<=20?'#ffff00':total<=30?'#ff8800':'#ff2244';
+  const pct=total===null?null:Math.round((total/max)*100);
+  const sev=total===null?'공식 합산 미제공':total<=4?'정상':total<=10?'경미':total<=20?'중등도':total<=30?'심각':'최중증';
+  const col=total===null?'#00ffcc':total<=4?'#00ffcc':total<=10?'#88ff44':total<=20?'#ffff00':total<=30?'#ff8800':'#ff2244';
   const el=s=>document.getElementById(s);
-  el('seqTotalEl').textContent=total;
+  el('seqTotalEl').textContent=total===null?'—':total;
   el('seqTotalEl').style.color=col;
   el('seqTotalEl').style.textShadow=`0 0 40px ${col}`;
-  const LABELS={face:'3.2 Face',finger:'3.4 Finger',hand:'3.5 Hand',pronation:'3.6 Pronation',tremor:'3.14 Tremor',toe:'3.7 Toe',leg:'3.8 Leg',actiontremor:'3.15 Action',posture:'3.12 Posture',gait:'3.9 Gait'};
+  const LABELS={face:'3.2 Face',finger:'3.4 Finger',hand:'3.5 Hand',pronation:'3.6 Pronation',tremor:'3.14 Tremor',toe:'3.7 Toe',leg:'3.8 Leg',actiontremor:'3.15 Action',posture:'3.12 Posture',gait:'Gait observation'};
   const FC=['#00ffcc','#88ff44','#ffff00','#ff8800','#ff2244'];
   el('seqBreakdown').innerHTML=FULL_SEQUENCE.map(t=>{
     const s=seqScores[t]??'—';
     const c=typeof s==='number'?FC[s]:'#888';
+    const cellText=typeof s==='number'?String(s)+'/4':'—';
     return `<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid rgba(255,255,255,0.05)">
       <span style="color:rgba(255,255,255,0.6)">${LABELS[t]}<\/span>
       <span style="color:${c};font-weight:700">${s}\/4<\/span><\/div>`;

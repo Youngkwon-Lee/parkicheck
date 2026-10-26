@@ -48,6 +48,7 @@
     const organizationId = context.organization_id;
     const createdBy = context.created_by_person_id;
     const duration = finiteNumber(payload?.duration_sec);
+    const isGait = payload?.factors?.test_type === 'gait';
 
     const status = options.status || 'completed';
     if (!['planned', 'in_progress', 'completed', 'cancelled', 'skipped'].includes(status)) {
@@ -77,15 +78,20 @@
           confidence: payload?.confidence || null,
           mode: payload?.mode || null,
           n_taps: finiteNumber(payload?.n_taps),
+          factors: payload?.factors || null,
         },
         hawk_i: payload?.hawk_i || null,
       },
       exercise_log: {
-        task_code: 'UPDRS_3_4',
-        task_display: 'UPDRS Part III Item 3.4 - Finger Tapping',
+        task_code: isGait ? 'GAIT_RESEARCH' : 'UPDRS_3_4',
+        task_display: isGait
+          ? 'Gait research observation - clinical UPDRS grade not assigned'
+          : 'UPDRS Part III Item 3.4 - Finger Tapping',
         hawk_i_analysis_id: payload?.hawk_i?.analysis_id || null,
       },
-      notes: 'ParkiCheck finger-tapping assessment with optional Hawk I research review',
+      notes: isGait
+        ? 'Unscored gait kinematics; clinical rating requires authorized review'
+        : 'ParkiCheck finger-tapping assessment with optional Hawk I research review',
     };
     if (duration !== null && duration >= 0) row.duration_seconds = Math.round(duration);
     return row;
