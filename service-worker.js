@@ -4,11 +4,12 @@
  */
 'use strict';
 
-const CACHE_NAME = 'parkicheck-public-shell-20261026-v1';
+const CACHE_NAME = 'parkicheck-public-shell-20261026-v2';
 const CACHE_PREFIX = 'parkicheck-public-shell-';
 const SHELL_PATHS = [
   '/',
   '/index.html',
+  '/camera-facing.js',
   '/hawk-i-client.js',
   '/medication-events.js',
   '/medication-comparison.js',

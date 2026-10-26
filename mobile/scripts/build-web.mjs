@@ -10,6 +10,7 @@ const destination = join(mobileRoot, 'www');
 // Explicit allowlist: never package .env, test fixtures, tokens, recordings or PHI.
 const publicFiles = [
   'index.html',
+  'camera-facing.js',
   'hawk-i-client.js',
   'medication-events.js',
   'medication-comparison.js',

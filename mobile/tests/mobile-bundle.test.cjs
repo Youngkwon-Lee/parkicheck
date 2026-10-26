@@ -18,7 +18,7 @@ test('native app uses only packaged local assets', () => {
 
 test('native bundle contains only allowlisted, byte-identical public assets', () => {
   const expected = [
-    'index.html', 'hawk-i-client.js', 'medication-events.js',
+    'index.html', 'camera-facing.js', 'hawk-i-client.js', 'medication-events.js',
     'medication-comparison.js', 'assessment-session.js',
     'manifest.webmanifest', 'service-worker.js',
     'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png',

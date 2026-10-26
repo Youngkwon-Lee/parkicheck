@@ -107,3 +107,16 @@ This documentation update does not modify runtime code.
 
 None of the physical camera checks above has been marked PASS.
 Neither Apple App Store nor Google Play release is authorized.
+
+
+## Camera switch update (2026-10-26)
+- iPhone/Android app bundle now includes the same front/rear camera
+  code as the production ParkiCheck web release, source
+  2da48b8f76bd1c4995d11406843f31b30fe478d3.
+- Rear switching needs a real phone with a physical rear camera;
+  the iOS Simulator cannot validate it. WebKit camera retry and
+  preview reattachment use no recording or image uploads.
+- The physical iPhone was unavailable at the time of integration.
+  A clean signed rebuild does not mean the installed device app
+  has been upgraded. Do not claim physical rear-lens success until
+  installation and an observed camera switch on the actual device.
