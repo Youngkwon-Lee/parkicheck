@@ -26,6 +26,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+  <script src="./camera-facing.js"></script>
   <script src="./hawk-i-client.js"></script>
   <script src="./medication-events.js"></script>
   <script src="./medication-comparison.js"></script>
@@ -41,6 +42,7 @@
     #container { position:relative; width:100vw; height:100vh; }
 
     video { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; transform:scaleX(-1); filter:brightness(0.6) contrast(1.1); }
+    #video[data-facing-mode="environment"] { transform:none; }
     #canvas { position:absolute; inset:0; width:100%; height:100%; }
 
     .panel { background:var(--glass); backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px); border:1px solid var(--border); border-radius:12px; padding:12px 18px; }
@@ -57,6 +59,13 @@
     #modeSwitch { position:absolute; top:20px; right:20px; z-index:20; display:flex; gap:2px; padding:4px; background:var(--glass); backdrop-filter:blur(18px); border:1px solid var(--border); border-radius:30px; }
     .mode-btn { padding:8px 16px; border:none; border-radius:24px; cursor:pointer; font-family:'Courier New',monospace; font-size:0.68rem; letter-spacing:1px; font-weight:bold; text-transform:uppercase; background:transparent; color:rgba(255,255,255,0.4); transition:all 0.25s; }
     .mode-btn.active { background:rgba(255,255,255,0.12); color:#fff; }
+    .camera-toggle { cursor:pointer; border:1px solid rgba(0,255,204,0.35); color:#00ffcc; border-radius:15px; background:rgba(0,255,204,0.06); font:700 0.7rem 'Courier New',monospace; padding:9px 12px; touch-action:manipulation; }
+    .camera-toggle:hover { background:rgba(0,255,204,0.14); }
+    .camera-toggle:disabled { opacity:0.4; cursor:not-allowed; }
+    .camera-toggle.in-mode-switch { font-size:0.6rem; padding:7px 10px; background:transparent; border-radius:24px; }
+    #cameraSwitchStatus { position:absolute; bottom:max(18px, env(safe-area-inset-bottom)); left:50%; transform:translateX(-50%); z-index:116; width:min(90vw,420px); background:rgba(9,18,30,0.96); border:1px solid rgba(0,255,204,0.4); border-radius:12px; color:#c4fff4; text-align:center; padding:10px; font-size:0.76rem; pointer-events:none; display:none; }
+    #cameraSwitchStatus.visible { display:block; }
+
 
     /* ── Legend ── */
     #legend { position:absolute; bottom:20px; left:50%; transform:translateX(-50%); z-index:10; display:flex; gap:8px; padding:8px 20px; background:var(--glass); backdrop-filter:blur(18px); border:1px solid var(--border); border-radius:30px; pointer-events:none; transition:opacity 0.4s; }
@@ -241,6 +250,18 @@
     .assess-dot { width:28px; height:3px; border-radius:2px; margin-top:8px; background:var(--ac); box-shadow:0 0 8px var(--ac); }
     .assess-back { margin-top:20px; font-size:0.65rem; letter-spacing:2px; color:rgba(255,255,255,0.25); cursor:pointer; border:none; background:none; font-family:'Courier New',monospace; transition:color 0.2s; }
     .assess-back:hover { color:rgba(255,255,255,0.5); }
+    .related-app-link { display:inline-block; margin-top:16px; padding:10px 14px; border:1px solid rgba(167,139,250,0.35); border-radius:12px; color:#c4b5fd; background:rgba(167,139,250,0.08); font-family:'Courier New',monospace; font-size:0.72rem; text-decoration:none; text-align:center; line-height:1.5; }
+    .related-app-link:hover, .related-app-link:focus-visible { color:#fff; border-color:#c4b5fd; background:rgba(167,139,250,0.16); }
+    .related-app-note { display:block; color:rgba(255,255,255,0.45); font:0.63rem/1.6 'Courier New',monospace; margin-top:5px; text-align:center; max-width:530px; padding:0 12px; }
+    @media (max-width:720px), (max-height:820px) {
+      #assessSelector { overflow-y:auto; justify-content:flex-start; overscroll-behavior:contain; -webkit-overflow-scrolling:touch; padding:24px 14px max(24px, env(safe-area-inset-bottom)); }
+      .assess-title { margin-bottom:14px; }
+      .assess-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+      .assess-card { padding:13px 12px; }
+      .related-app-link { margin-top:4px; }
+      .related-app-note { margin:6px 0 14px; }
+    }
+
 
     /* ── History panel ── */
     #historyOverlay { position:absolute; inset:0; z-index:108; background:rgba(0,0,0,0.7); backdrop-filter:blur(10px); overflow-y:auto; display:flex; justify-content:center; align-items:flex-start; padding:48px 16px 40px; transition:opacity 0.4s; }
@@ -300,6 +321,12 @@
     .admin-score-bar { height:100%; border-radius:3px; }
     .admin-score-cnt { font-size:0.62rem; color:rgba(255,255,255,0.45); min-width:22px; text-align:right; }
   </style>
+  <meta name="theme-color" content="#03030a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="ParkiCheck">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
 </head>
 <body>
 <div id="container">
@@ -503,8 +530,9 @@
     <button class="btn-primary" id="startBtn" onclick="enterExperience()">Enter Experience</button>
   </div>
 
-  <video id="video" autoplay playsinline></video>
+  <video id="video" autoplay muted playsinline></video>
   <canvas id="canvas"></canvas>
+  <div id="cameraSwitchStatus" role="status" aria-live="polite"></div>
 
   <!-- Free play HUD -->
   <div id="hud">
@@ -521,6 +549,7 @@
     <button class="mode-btn active" id="btnFree">FREE</button>
     <button class="mode-btn" id="btnUpdrs">UPDRS</button>
     <button class="mode-btn" id="btnVideo">VIDEO</button>
+    <button type="button" class="camera-toggle in-mode-switch" data-camera-toggle aria-label="후면 카메라로 전환">↻ 후면</button>
   </div>
 
   <!-- Finger legend -->
@@ -534,6 +563,8 @@
   <!-- Assessment Selector -->
   <div id="assessSelector" class="hidden">
     <div class="assess-title">SELECT ASSESSMENT</div>
+    <a id="faceFitnessRelatedApp" class="related-app-link" href="https://face-fitness.vercel.app/" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" aria-label="별도 Face Fitness 안면 움직임 평가 앱 새 탭에서 열기">FACE FITNESS ↗ · 안면 움직임 평가</a>
+    <span class="related-app-note">별도 연구용 앱입니다. ParkiCheck 검사 결과나 계정 정보가 자동으로 전송되지 않습니다.</span>
     <div class="assess-grid">
       <div class="assess-card" style="--ac:#00ffcc" onclick="selectAssessment('finger')">
         <div class="assess-num">UPDRS 3.4</div>
@@ -606,6 +637,7 @@
       <div class="ov-h2">UPDRS 3.4</div>
       <div class="ov-sub">FINGER TAPPING TEST</div>
       <p class="ov-p">검지를 엄지에 최대한 <strong style="color:#fff">빠르고 넓게</strong> 탭하세요.<br>10초간 측정합니다.<br><br>손을 카메라에 잘 보이게 위치시킨 후<br>준비되면 시작 버튼을 누르세요.</p>
+      <button type="button" class="camera-toggle" data-camera-toggle aria-label="후면 카메라로 전환" style="margin:0 auto 16px">↻ 후면 카메라</button>
       <label class="hawk-consent" id="liveHawkIConsentRow" for="liveHawkIConsent">
         <input type="checkbox" id="liveHawkIConsent">
         <span>
@@ -755,6 +787,7 @@ try {
 let currentUser = null;
 let lastResultPayload = null;
 let cameraStarted = false;
+let cameraFrameLoopStarted = false;
 let currentAssessmentSessionId = null;
 let currentAssessmentMedicationContext = null;
 let hawkIReviewPromise = null;
@@ -1097,6 +1130,12 @@ async function doSignOut() {
   document.getElementById('profileMenu').classList.remove('open');
   cameraStarted = false;
   try { camera.stop(); } catch(e) {}
+  window.ParkiCameraFacing?.stopStream(video.srcObject);
+  video.srcObject = null;
+  video.pause();
+  cameraFacingMode = 'user';
+  video.dataset.facingMode = cameraFacingMode;
+  updateCameraToggleUI();
   document.getElementById('assessSelector').classList.add('hidden');
   document.getElementById('resultsOverlay').classList.remove('visible');
   switchAuthTab('login');
@@ -2549,9 +2588,12 @@ function selectAssessment(type) {
   if (!cameraStarted) {
     cameraStarted = true;
     try { initAudio(); } catch(e) {}
-    try { camera.start().catch(()=>{}); } catch(e) {}
-    resize();
-    requestAnimationFrame(frame);
+    void startLiveCamera();
+    if (!cameraFrameLoopStarted) {
+      cameraFrameLoopStarted = true;
+      resize();
+      requestAnimationFrame(frame);
+    }
   }
 
   // Update HUD label and timer initial value
@@ -2580,12 +2622,13 @@ function startCountdown() {
   const tick=()=>{
     if(count===0){numEl.textContent='GO!';numEl.style.color='#00ffcc';numEl.style.animation='none';numEl.offsetHeight;numEl.style.animation='cpulse 0.75s ease-out';setTimeout(()=>{cdEl.classList.remove('visible');startTest();},650);return;}
     numEl.textContent=count;numEl.style.color=colors[3-count];numEl.style.animation='none';numEl.offsetHeight;numEl.style.animation='cpulse 0.75s ease-out';
-    cdEl.classList.add('visible'); count--; setTimeout(tick,900);
+    cdEl.classList.add('visible'); updateCameraToggleUI(); count--; setTimeout(tick,900);
   };
   tick();
 }
 function startTest() {
   testState='running';
+  updateCameraToggleUI();
   pendingHawkIReview = null;
   hawkIReviewPromise = null;
   const meta = ASSESS_META[testType] || null;
@@ -2625,6 +2668,7 @@ function startTest() {
 function endTest() {
   if(testState!=='running') return;
   testState='done';
+  updateCameraToggleUI();
   document.getElementById('testHud').classList.remove('visible');
   if (liveHawkIRecordingEnabled) hawkIReviewPromise = finishLiveHawkIRecording();
   if(testType==='tremor'||testType==='actiontremor'){ showTremorResults(); return; }
@@ -4074,7 +4118,7 @@ function drawHand(landmarks, activeFingers, opts = {}) {
   const oy = hasExplicitViewport ? opts.oy : liveViewport.y;
   const sw = hasExplicitViewport ? opts.sw : liveViewport.width;
   const sh = hasExplicitViewport ? opts.sh : liveViewport.height;
-  const mirror = opts.mirror ?? true;
+  const mirror = opts.mirror ?? (cameraFacingMode === "user");
   const lx = lm => ox + (mirror ? (1-lm.x) : lm.x) * sw;
   const ly = lm => oy + lm.y * sh;
   ctx.save(); ctx.strokeStyle='rgba(255,255,255,0.18)'; ctx.lineWidth=1.5;
@@ -4119,7 +4163,7 @@ function getLiveCameraViewport() {
   };
 }
 
-function projectLiveCameraPoint(x, y, mirror = true) {
+function projectLiveCameraPoint(x, y, mirror = (cameraFacingMode === "user")) {
   const viewport = getLiveCameraViewport();
   return {
     x: viewport.x + (mirror ? 1 - x : x) * viewport.width,
@@ -4127,7 +4171,7 @@ function projectLiveCameraPoint(x, y, mirror = true) {
   };
 }
 
-function projectLiveCameraLandmark(landmark, mirror = true) {
+function projectLiveCameraLandmark(landmark, mirror = (cameraFacingMode === "user")) {
   return projectLiveCameraPoint(landmark.x, landmark.y, mirror);
 }
 
@@ -4189,6 +4233,82 @@ function frame() {
 // MEDIAPIPE
 // ═══════════════════════════════════════════
 let hands, camera;
+let cameraFacingMode = 'user';
+let cameraSwitchBusy = false;
+let cameraSwitchNoticeTimer = null;
+function reportCameraStatus(message) {
+  const status = document.getElementById('cameraSwitchStatus');
+  status.textContent = message;
+  status.classList.add('visible');
+  clearTimeout(cameraSwitchNoticeTimer);
+  cameraSwitchNoticeTimer = setTimeout(() => status.classList.remove('visible'), 5000);
+}
+function isCameraSwitchBlocked() {
+  return cameraSwitchBusy || testState !== 'idle' || appMode === 'video' ||
+    document.getElementById('countdown').classList.contains('visible') ||
+    liveHawkIRecordingEnabled;
+}
+function updateCameraToggleUI() {
+  const next = cameraFacingMode === 'user' ? '후면' : '전면';
+  video.dataset.facingMode = cameraFacingMode;
+  document.querySelectorAll('[data-camera-toggle]').forEach(button => {
+    const shortLabel = button.classList.contains('in-mode-switch');
+    button.textContent = shortLabel ? '↻ ' + next : '↻ ' + next + ' 카메라';
+    button.setAttribute('aria-label', next + ' 카메라로 전환');
+    button.disabled = isCameraSwitchBlocked();
+  });
+}
+async function startLiveCamera() {
+  if (cameraSwitchBusy) return;
+  cameraSwitchBusy = true;
+  updateCameraToggleUI();
+  try {
+    await camera.start();
+  } catch (error) {
+    cameraStarted = false;
+    reportCameraStatus('카메라 사용 권한과 연결 상태를 확인해 주세요.');
+    console.warn('ParkiCheck camera start unavailable:', error?.name || 'unknown');
+  } finally {
+    cameraSwitchBusy = false;
+    updateCameraToggleUI();
+  }
+}
+async function toggleLiveCamera() {
+  if (isCameraSwitchBlocked()) return;
+  if (!video.srcObject || !window.ParkiCameraFacing) {
+    reportCameraStatus('먼저 검사항목을 선택해 카메라를 시작해 주세요.');
+    return;
+  }
+  cameraSwitchBusy = true;
+  updateCameraToggleUI();
+  const target = cameraFacingMode === 'user' ? 'environment' : 'user';
+  try {
+    const result = await window.ParkiCameraFacing.switchStream(
+      video, target, cameraFacingMode,
+      constraints => navigator.mediaDevices.getUserMedia(constraints),
+      { enumerateDevices: () => navigator.mediaDevices.enumerateDevices() },
+    );
+    cameraFacingMode = result.mode;
+    handResults = null;
+    poseResults = null;
+    faceMeshResults = null;
+    if (result.ok) reportCameraStatus((cameraFacingMode === 'environment' ? '후면' : '전면') + ' 카메라로 전환했습니다.');
+    else {
+      const explanation = window.ParkiCameraFacing.cameraErrorMessage(result.error);
+      reportCameraStatus(result.restored
+        ? explanation + ' 이전 카메라로 복구했습니다.'
+        : explanation + ' 카메라가 복구되지 않았습니다.');
+    }
+  } catch (error) {
+    reportCameraStatus(window.ParkiCameraFacing?.cameraErrorMessage(error) || '카메라 전환에 실패했습니다.');
+  } finally {
+    cameraSwitchBusy = false;
+    updateCameraToggleUI();
+  }
+}
+document.querySelectorAll('[data-camera-toggle]').forEach(button =>
+  button.addEventListener('click', () => void toggleLiveCamera()));
+updateCameraToggleUI();
 try {
   hands = new Hands({locateFile:f=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
   hands.setOptions({maxNumHands:2, modelComplexity:1, minDetectionConfidence:0.72, minTrackingConfidence:0.55});
@@ -4198,6 +4318,7 @@ try {
   });
   camera = new Camera(video,{
     onFrame: async()=>{
+      if (cameraSwitchBusy) return;
       if(appMode!=='video'){
         if((testType==='toe'||testType==='leg'||testType==='posture'||testType==='gait')&&poseModelLoaded&&poseModel){
           await poseModel.send({image:video});
@@ -4209,6 +4330,7 @@ try {
       }
     },
     width:1280, height:720,
+    facingMode:'user',
   });
 } catch(e) {
   console.error('MediaPipe init failed:', e);
@@ -4306,13 +4428,14 @@ $('testStartBtn').addEventListener('click', startCountdown);
 $('testRetryBtn').addEventListener('click',()=>{
   discardStagedHawkIReview();
   $('resultsOverlay').classList.remove('visible');
-  if(appMode==='updrs'){ testState='idle'; $('updrsTestOverlay').classList.remove('hidden'); }
+  if(appMode==='updrs'){ testState='idle'; $('updrsTestOverlay').classList.remove('hidden'); updateCameraToggleUI(); }
   else if(appMode==='video'){ $('videoDropOverlay').classList.remove('hidden'); }
 });
 $('testDoneBtn').addEventListener('click',()=>{
   discardStagedHawkIReview();
   $('resultsOverlay').classList.remove('visible');
   testState='idle';
+  updateCameraToggleUI();
   $('assessSelector').classList.remove('hidden');
 });
 
@@ -4330,5 +4453,15 @@ dropZone.addEventListener('drop', e=>{
   if(f && f.type.startsWith('video/')) analyzeVideoFile(f);
 });
 </script>
+  <script>
+    // Native Capacitor ships the same public assets. PWA cache is browser-only.
+    if ('serviceWorker' in navigator && location.protocol === 'https:' &&
+        location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/service-worker.js', { scope: '/' })
+          .catch((error) => console.warn('ParkiCheck public-shell cache unavailable', error));
+      });
+    }
+  </script>
 </body>
 </html>

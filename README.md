@@ -69,3 +69,9 @@ verify HTTP 200, the expected review labels, and no new browser errors.
 - Source: `codex/refine-hawk-review-copy-20260830@8a8ebe5`
 - Production deployment: `dpl_JAokVfttdnm9ST6V2w9V6tdfRY2u`
 - Stable URL: <https://finger-tap-fx.vercel.app/>
+
+## Mobile application workstream (2026-10-26)
+
+The optional PWA and Capacitor iOS/Android prototype live in the mobile/
+directory. See mobile/README.md for install/build commands, privacy boundaries,
+and outstanding physical-device verification.
