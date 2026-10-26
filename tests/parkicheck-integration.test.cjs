@@ -87,7 +87,7 @@ test('Hawk I review creates an authenticated shared session before upload', () =
 
 test('saving waits for the consented Hawk I review to finish', () => {
   assert.match(html, /if \(hawkIReviewPromise\)[\s\S]*await hawkIReviewPromise/);
-  assert.match(html, /if \(lastResultPayload\) void handleSaveResult\(\)/);
+  assert.match(html, /if \(currentUser && lastResultPayload\) void handleSaveResult\(\)/);
 });
 
 test('a consented live finger-tapping session stages the raw camera stream until save', () => {
