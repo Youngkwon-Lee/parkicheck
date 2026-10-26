@@ -512,7 +512,7 @@
     <button class="btn-primary" id="startBtn" onclick="enterExperience()">Enter Experience</button>
   </div>
 
-  <video id="video" autoplay playsinline></video>
+  <video id="video" autoplay muted playsinline></video>
   <canvas id="canvas"></canvas>
   <div id="cameraSwitchStatus" role="status" aria-live="polite"></div>
 
@@ -4266,17 +4266,21 @@ async function toggleLiveCamera() {
     const result = await window.ParkiCameraFacing.switchStream(
       video, target, cameraFacingMode,
       constraints => navigator.mediaDevices.getUserMedia(constraints),
+      { enumerateDevices: () => navigator.mediaDevices.enumerateDevices() },
     );
     cameraFacingMode = result.mode;
     handResults = null;
     poseResults = null;
     faceMeshResults = null;
     if (result.ok) reportCameraStatus((cameraFacingMode === 'environment' ? '후면' : '전면') + ' 카메라로 전환했습니다.');
-    else reportCameraStatus(result.restored
-      ? '선택한 카메라를 사용할 수 없어 이전 카메라로 돌아왔습니다.'
-      : '카메라 연결에 실패했습니다. 다시 시도해 주세요.');
+    else {
+      const explanation = window.ParkiCameraFacing.cameraErrorMessage(result.error);
+      reportCameraStatus(result.restored
+        ? explanation + ' 이전 카메라로 복구했습니다.'
+        : explanation + ' 카메라가 복구되지 않았습니다.');
+    }
   } catch (error) {
-    reportCameraStatus('카메라 전환을 완료할 수 없습니다.');
+    reportCameraStatus(window.ParkiCameraFacing?.cameraErrorMessage(error) || '카메라 전환에 실패했습니다.');
   } finally {
     cameraSwitchBusy = false;
     updateCameraToggleUI();

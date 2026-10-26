@@ -52,16 +52,20 @@ test('unavailable rear restores original front without mislabeling', async () =>
   const asked = [];
   const result = await switchStream(video, 'environment', 'user', async constraints => {
     asked.push(constraints.video.facingMode);
-    if ('exact' in constraints.video.facingMode) throw new Error('NotFoundError');
-    return restored;
-  });
+    if (constraints.video.facingMode?.exact === 'environment') {
+      const error = new Error('No matching rear camera');
+      error.name = 'NotFoundError';
+      throw error;
+    }
+    return constraints.video.facingMode === 'environment' ? stream('user') : restored;
+  }, { sleep: async () => {} });
   assert.equal(result.ok, false);
   assert.equal(result.mode, 'user');
   assert.equal(result.restored, true);
   assert.equal(video.srcObject, restored);
   assert.equal(front.track.stopped, true);
   assert.equal(restored.track.stopped, false);
-  assert.deepEqual(asked, [{ exact: 'environment' }, { ideal: 'user' }]);
+  assert.deepEqual(asked, [{ exact: 'environment' }, 'environment', { ideal: 'user' }]);
 });
 test('incorrectly returned lens is rejected and front restored', async () => {
   const front = stream('user'), wrong = stream('user'), restored = stream('user');
@@ -100,7 +104,7 @@ test('inactive camera cannot be switched; same-mode is harmless', async () => {
 });
 test('integration: rear is not mirrored, uploaded videos remain unmirrored', () => {
   const html = fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
-  assert.match(html, /id="video"\s+autoplay\s+playsinline/);
+  assert.match(html, /id="video"\s+autoplay\s+muted\s+playsinline/);
   assert.match(html, /#video\[data-facing-mode="environment"\]\s*\{\s*transform:none/);
   assert.match(html, /mirror = opts\.mirror \?\? \(cameraFacingMode === "user"\)/);
   assert.match(html, /projectLiveCameraPoint\(x, y, mirror = \(cameraFacingMode === "user"\)\)/);
