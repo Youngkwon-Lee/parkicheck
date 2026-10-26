@@ -1066,7 +1066,8 @@ function showAssessSelector() {
   document.getElementById('landingOverlay').classList.add('hidden');
   document.getElementById('startOverlay').classList.add('hidden');
   document.getElementById('assessSelector').classList.remove('hidden');
-  if (lastResultPayload) void handleSaveResult();
+  // Resume a pending save only after authentication, never on guest return.
+  if (currentUser && lastResultPayload) void handleSaveResult();
 }
 
 async function doLogin() {
