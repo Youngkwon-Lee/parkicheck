@@ -250,6 +250,18 @@
     .assess-dot { width:28px; height:3px; border-radius:2px; margin-top:8px; background:var(--ac); box-shadow:0 0 8px var(--ac); }
     .assess-back { margin-top:20px; font-size:0.65rem; letter-spacing:2px; color:rgba(255,255,255,0.25); cursor:pointer; border:none; background:none; font-family:'Courier New',monospace; transition:color 0.2s; }
     .assess-back:hover { color:rgba(255,255,255,0.5); }
+    .related-app-link { display:inline-block; margin-top:16px; padding:10px 14px; border:1px solid rgba(167,139,250,0.35); border-radius:12px; color:#c4b5fd; background:rgba(167,139,250,0.08); font-family:'Courier New',monospace; font-size:0.72rem; text-decoration:none; text-align:center; line-height:1.5; }
+    .related-app-link:hover, .related-app-link:focus-visible { color:#fff; border-color:#c4b5fd; background:rgba(167,139,250,0.16); }
+    .related-app-note { display:block; color:rgba(255,255,255,0.45); font:0.63rem/1.6 'Courier New',monospace; margin-top:5px; text-align:center; max-width:530px; padding:0 12px; }
+    @media (max-width:720px), (max-height:820px) {
+      #assessSelector { overflow-y:auto; justify-content:flex-start; overscroll-behavior:contain; -webkit-overflow-scrolling:touch; padding:24px 14px max(24px, env(safe-area-inset-bottom)); }
+      .assess-title { margin-bottom:14px; }
+      .assess-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+      .assess-card { padding:13px 12px; }
+      .related-app-link { margin-top:4px; }
+      .related-app-note { margin:6px 0 14px; }
+    }
+
 
     /* ── History panel ── */
     #historyOverlay { position:absolute; inset:0; z-index:108; background:rgba(0,0,0,0.7); backdrop-filter:blur(10px); overflow-y:auto; display:flex; justify-content:center; align-items:flex-start; padding:48px 16px 40px; transition:opacity 0.4s; }
@@ -545,6 +557,8 @@
   <!-- Assessment Selector -->
   <div id="assessSelector" class="hidden">
     <div class="assess-title">SELECT ASSESSMENT</div>
+    <a id="faceFitnessRelatedApp" class="related-app-link" href="https://face-fitness.vercel.app/" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" aria-label="별도 Face Fitness 안면 움직임 평가 앱 새 탭에서 열기">FACE FITNESS ↗ · 안면 움직임 평가</a>
+    <span class="related-app-note">별도 연구용 앱입니다. ParkiCheck 검사 결과나 계정 정보가 자동으로 전송되지 않습니다.</span>
     <div class="assess-grid">
       <div class="assess-card" style="--ac:#00ffcc" onclick="selectAssessment('finger')">
         <div class="assess-num">UPDRS 3.4</div>
