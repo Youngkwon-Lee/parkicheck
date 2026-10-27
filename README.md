@@ -69,3 +69,26 @@ verify HTTP 200, the expected review labels, and no new browser errors.
 - Source: `codex/refine-hawk-review-copy-20260830@8a8ebe5`
 - Production deployment: `dpl_JAokVfttdnm9ST6V2w9V6tdfRY2u`
 - Stable URL: <https://finger-tap-fx.vercel.app/>
+
+## Opt-in clean view (review branch)
+
+`클린 보기` switches presentation only. It does not start a camera, test, recording,
+upload, or save. The normal view remains the default, and the toggle is not stored.
+Clean view mutes tap audio and suppresses game particles, flashes, trails, glow,
+and canvas overlays. Plain hand landmarks remain visible.
+
+For a finger-tapping assessment, a high-contrast readout shows the existing
+**detected event count** and the **latest positive inter-event interval (ms)**.
+This is not a new detector or clinical score, and the latest interval is not the
+median interval reported on the result screen. Idle modes show `--`; entering
+VIDEO does not reuse a prior live assessment's values. Other assessment types
+continue to detect normally but do not display finger-specific readout values.
+
+Regression tests use synthetic landmarks and timestamps, not camera input or
+patient media. Passing them does not establish clinical accuracy or replace a
+browser/camera acceptance check. This branch is not a production release.
+
+The review branch `aside/parkicheck-clean-view-20261027` alone is excluded from
+automatic Vercel Git deployments via `vercel.json`. Other branches and repository
+CI are not disabled. Browser review uses the existing Aside tab and a local static
+server; this change does not authorize a production deployment.
