@@ -1,0 +1,18 @@
+/* Opt-in presentation only. No camera, detection, scoring or save behavior. */
+#cleanViewToggle { position:absolute; top:78px; right:20px; z-index:25; min-height:44px; padding:10px 16px; border:1px solid var(--border); border-radius:24px; color:#e9edf5; background:rgba(12,15,28,.94); font:600 13px system-ui,sans-serif; cursor:pointer; }
+#cleanViewToggle[aria-pressed="true"] { border-color:#8bd8cb; color:#c5f1e9; }
+#cleanViewToggle:focus-visible { outline:2px solid #c5f1e9; outline-offset:4px; }
+#cleanViewPanel { position:absolute; top:138px; left:20px; z-index:25; width:min(420px,calc(100% - 40px)); padding:18px 20px; border:1px solid rgba(255,255,255,.2); border-radius:16px; background:rgba(8,12,20,.94); color:#f5f7fa; font:14px/1.5 system-ui,sans-serif; pointer-events:none; }
+#cleanViewPanel[hidden] { display:none; }
+.clean-readings { display:grid; grid-template-columns:1fr 1fr; gap:24px; margin:12px 0; }
+.clean-reading-label { font-size:12px; color:#b7c3cf; }
+.clean-reading-value { margin-top:2px; font-size:44px; line-height:1.15; font-weight:600; font-variant-numeric:tabular-nums; letter-spacing:-.03em; }
+.clean-reading-unit { font-size:14px; margin-left:4px; }
+#cleanViewStatus,#cleanViewRemaining,.clean-view-note { margin:4px 0 0; color:#bdc8d4; font-size:12px; }
+body.clean-view #hud,body.clean-view #legend,body.clean-view #testHud { display:none; }
+@media (max-width:520px) {
+  #cleanViewToggle { top:74px; right:12px; }
+  #cleanViewPanel { top:auto; bottom:20px; left:12px; width:calc(100% - 24px); padding:14px 16px; }
+  .clean-reading-value { font-size:36px; }
+  .clean-readings { gap:16px; }
+}

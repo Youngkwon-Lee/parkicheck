@@ -31,6 +31,8 @@
   <script src="./medication-events.js"></script>
   <script src="./medication-comparison.js"></script>
   <script src="./assessment-session.js"></script>
+  <script src="./clean-view.js"></script>
+  <link rel="stylesheet" href="./clean-view.css">
 
   <style>
     :root {
@@ -545,6 +547,18 @@
     <button class="mode-btn" id="btnVideo">VIDEO</button>
     <button type="button" class="camera-toggle in-mode-switch" data-camera-toggle aria-label="후면 카메라로 전환">↻ 후면</button>
   </div>
+
+  <!-- Clean view is opt-in and changes presentation only. -->
+  <button type="button" id="cleanViewToggle" aria-pressed="false" aria-controls="cleanViewPanel">클린 보기</button>
+  <section id="cleanViewPanel" aria-label="손가락 태핑 감지 기록" hidden>
+    <p id="cleanViewStatus" role="status" aria-live="polite">측정 대기</p>
+    <div class="clean-readings">
+      <div><div class="clean-reading-label">감지 횟수</div><div class="clean-reading-value"><span id="cleanViewCount">--</span><span class="clean-reading-unit">회</span></div></div>
+      <div><div class="clean-reading-label">최근 감지 간격</div><div class="clean-reading-value"><span id="cleanViewInterval">--</span><span class="clean-reading-unit">ms</span></div></div>
+    </div>
+    <p id="cleanViewRemaining"></p>
+    <p class="clean-view-note">앱이 감지한 이벤트 기준 · 진단이나 임상 정확도 검증이 아닙니다.</p>
+  </section>
 
   <!-- Finger legend -->
   <div id="legend">
@@ -1774,6 +1788,8 @@ const CONNECTIONS = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10
 // STATE
 // ═══════════════════════════════════════════
 let effects = [], bgWaves = [];
+let cleanViewEnabled = false;
+let cleanVideoReadoutReady = false;
 let tapCount = 0, combo = 0, lastTapTime = 0, tapHistory = [];
 let audioCtx = null, handResults = null;
 
@@ -1844,9 +1860,9 @@ let hawkIReviewController = null;
 // ═══════════════════════════════════════════
 // AUDIO
 // ═══════════════════════════════════════════
-function initAudio() { audioCtx = new (window.AudioContext||window.webkitAudioContext)(); }
+function initAudio() { if (cleanViewEnabled) return; audioCtx = new (window.AudioContext||window.webkitAudioContext)(); }
 function playTap(freq, lvl) {
-  if (!audioCtx) return;
+  if (cleanViewEnabled || !audioCtx) return;
   const t = audioCtx.currentTime;
   const o = audioCtx.createOscillator(), g = audioCtx.createGain();
   o.connect(g); g.connect(audioCtx.destination);
@@ -1977,7 +1993,9 @@ class HeightArc {
 // ═══════════════════════════════════════════
 // TRAIL HELPER
 // ═══════════════════════════════════════════
+const quietTrail = { add() {}, draw() {} };
 function getTrail(hi, fi) {
+  if (cleanViewEnabled) return quietTrail;
   const k=`${hi}-${fi}`;
   if(!trails[k]) trails[k]=new FingerTrail(fi==='t'?'rgba(255,255,255,0.7)':FINGER_COLORS[fi]);
   return trails[k];
@@ -2440,18 +2458,20 @@ function triggerTap(x, y, fi) {
   // Keep the contact visible without turning the clinical task into a game.
   // These cues are display-only and never affect tap detection, measurement,
   // or the UPDRS research score.
-  const cueScale = Math.min(0.58 + combo*0.035, 0.9);
-  const particleCount = Math.min(10, 4 + Math.floor(combo / 2));
-  for(let i=0;i<particleCount;i++) {
-    effects.push(new Particle(x,y,color,cueScale*0.55));
+  if (!cleanViewEnabled) {
+    const cueScale = Math.min(0.58 + combo*0.035, 0.9);
+    const particleCount = Math.min(10, 4 + Math.floor(combo / 2));
+    for(let i=0;i<particleCount;i++) {
+      effects.push(new Particle(x,y,color,cueScale*0.55));
+    }
+    effects.push(
+      new Shockwave(x,y,color,0,cueScale),
+      new GlowPulse(x,y,color,cueScale)
+    );
+    if(combo>=2) effects.push(new RingSegment(x,y,color,cueScale*0.8));
+    if(combo>=4) effects.push(new Burst(x,y,color));
+    if(combo>=6) effects.push(new Shockwave(x,y,color,6,cueScale*0.72));
   }
-  effects.push(
-    new Shockwave(x,y,color,0,cueScale),
-    new GlowPulse(x,y,color,cueScale)
-  );
-  if(combo>=2) effects.push(new RingSegment(x,y,color,cueScale*0.8));
-  if(combo>=4) effects.push(new Burst(x,y,color));
-  if(combo>=6) effects.push(new Shockwave(x,y,color,6,cueScale*0.72));
   playTap(FINGER_FREQS[fi], combo);
   if(appMode!=='video') updateFreeHUD();
 }
@@ -2460,10 +2480,12 @@ function triggerTap(x, y, fi) {
 // 3.5 HAND MOVEMENTS TRIGGER
 // ═══════════════════════════════════════════
 function triggerHandOpen(x, y, normAmp) {
-  const n = 8;
-  for(let i=0;i<n;i++) effects.push(new BloomPetal(x,y,(i/n)*Math.PI*2,normAmp*2.5+0.5));
-  effects.push(new Shockwave(x,y,'#ff00ff',0,1.1), new GlowPulse(x,y,'#ff00ff'));
-  bgWaves.push(new BgWave(x,y,'#ff00ff'));
+  if (!cleanViewEnabled) {
+    const n = 8;
+    for(let i=0;i<n;i++) effects.push(new BloomPetal(x,y,(i/n)*Math.PI*2,normAmp*2.5+0.5));
+    effects.push(new Shockwave(x,y,'#ff00ff',0,1.1), new GlowPulse(x,y,'#ff00ff'));
+    bgWaves.push(new BgWave(x,y,'#ff00ff'));
+  }
   if(testState==='running'){
     const now=Date.now(), key=`h-${x|0}`;
     const elapsed=now-(handCycleMs[key]||now);
@@ -2477,29 +2499,31 @@ function triggerHandOpen(x, y, normAmp) {
   combo=(Date.now()-lastTapTime<COMBO_WINDOW)?combo+1:1;
   lastTapTime=Date.now(); tapCount++;
   tapHistory.push(Date.now()); if(tapHistory.length>10)tapHistory.shift();
-  if(combo>=3){effects.push(new Lightning(x,y,'#ff00ff'));}
+  if(!cleanViewEnabled && combo>=3){effects.push(new Lightning(x,y,'#ff00ff'));}
   playTap(440,combo);
   if(appMode!=='video') updateFreeHUD();
 }
 function triggerHandClose(x, y) {
-  effects.push(new ImplodeRing(x,y), new ScreenFlash('#ff00ff'));
+  if (!cleanViewEnabled) effects.push(new ImplodeRing(x,y), new ScreenFlash('#ff00ff'));
 }
 
 // ═══════════════════════════════════════════
 // 3.6 PRONATION-SUPINATION TRIGGER
 // ═══════════════════════════════════════════
 function triggerFlip(x, y, flipAmp) {
-  const sc = 1 + flipAmp * 0.8;
-  // 16 primary spokes
-  for(let i=0;i<16;i++) effects.push(new SpinSpoke(x,y,(i/16)*Math.PI*2,i*1,sc));
-  // 8 secondary shorter spokes (offset)
-  for(let i=0;i<8;i++)  effects.push(new SpinSpoke(x,y,(i/8)*Math.PI*2+Math.PI/16,i*2+8,sc*0.6));
-  // 3 expanding rings of different sizes
-  effects.push(new SpinRing(x,y,sc*1.4), new SpinRing(x,y,sc*0.9), new SpinRing(x,y,sc*0.5));
-  // Particles burst
-  for(let i=0;i<20;i++) effects.push(new Particle(x,y,i%3===0?'#ffbb44':'#ff8800',sc*0.9));
-  effects.push(new ScreenFlash('#ff8800'), new GlowPulse(x,y,'#ff8800'));
-  bgWaves.push(new BgWave(x,y,'#ff8800'), new BgWave(x,y,'#ffbb44'));
+  if (!cleanViewEnabled) {
+    const sc = 1 + flipAmp * 0.8;
+    // 16 primary spokes
+    for(let i=0;i<16;i++) effects.push(new SpinSpoke(x,y,(i/16)*Math.PI*2,i*1,sc));
+    // 8 secondary shorter spokes (offset)
+    for(let i=0;i<8;i++)  effects.push(new SpinSpoke(x,y,(i/8)*Math.PI*2+Math.PI/16,i*2+8,sc*0.6));
+    // 3 expanding rings of different sizes
+    effects.push(new SpinRing(x,y,sc*1.4), new SpinRing(x,y,sc*0.9), new SpinRing(x,y,sc*0.5));
+    // Particles burst
+    for(let i=0;i<20;i++) effects.push(new Particle(x,y,i%3===0?'#ffbb44':'#ff8800',sc*0.9));
+    effects.push(new ScreenFlash('#ff8800'), new GlowPulse(x,y,'#ff8800'));
+    bgWaves.push(new BgWave(x,y,'#ff8800'), new BgWave(x,y,'#ffbb44'));
+  }
   if(testState==='running'){
     const now=Date.now();
     const elapsed=now-testData.lastTapT;
@@ -2512,7 +2536,7 @@ function triggerFlip(x, y, flipAmp) {
   combo=(Date.now()-lastTapTime<COMBO_WINDOW)?combo+1:1;
   lastTapTime=Date.now(); tapCount++;
   tapHistory.push(Date.now()); if(tapHistory.length>10)tapHistory.shift();
-  if(combo>=3){for(let i=0;i<6;i++) effects.push(new SpinSpoke(x,y,(i/6)*Math.PI*2+0.3,i*3));}
+  if(!cleanViewEnabled && combo>=3){for(let i=0;i<6;i++) effects.push(new SpinSpoke(x,y,(i/6)*Math.PI*2+0.3,i*3));}
   playTap(330,combo);
   if(appMode!=='video') updateFreeHUD();
 }
@@ -2535,7 +2559,40 @@ function updateFreeHUD() {
 // ═══════════════════════════════════════════
 // MODE MANAGEMENT
 // ═══════════════════════════════════════════
+function updateCleanReadout() {
+  const panel = document.getElementById('cleanViewPanel');
+  panel.hidden = !cleanViewEnabled;
+  if (!cleanViewEnabled) return;
+  const view = ParkiCleanView.describe({ mode:appMode, type:testType, state:testState,
+    taps:testData.taps, videoReady:cleanVideoReadoutReady, now:Date.now(), startTime:testData.startTime,
+    durationMs:TEST_DURATIONS[testType] || 10000 });
+  document.getElementById('cleanViewCount').textContent = view.count === null ? '--' : String(view.count);
+  document.getElementById('cleanViewInterval').textContent = view.intervalMs === null ? '--' : String(view.intervalMs);
+  const status = document.getElementById('cleanViewStatus');
+  if (status.textContent !== view.status) status.textContent = view.status;
+  document.getElementById('cleanViewRemaining').textContent = view.remainingSeconds === null ? '' : '남은 시간 '+view.remainingSeconds.toFixed(1)+'초';
+}
+function setCleanView(enabled) {
+  cleanViewEnabled = Boolean(enabled);
+  document.body.classList.toggle('clean-view', cleanViewEnabled);
+  const button = document.getElementById('cleanViewToggle');
+  button.setAttribute('aria-pressed', String(cleanViewEnabled));
+  button.textContent = cleanViewEnabled ? '일반 보기로' : '클린 보기';
+  // Flush presentation queues on either transition; measurement remains intact.
+  effects.length = 0; bgWaves.length = 0;
+  Object.keys(trails).forEach(key=>delete trails[key]);
+  try {
+    if (!audioCtx && !cleanViewEnabled && cameraStarted) initAudio();
+    if (audioCtx) {
+      const pending = cleanViewEnabled ? audioCtx.suspend() : audioCtx.resume();
+      if (pending && typeof pending.catch === 'function') pending.catch(()=>{});
+    }
+  } catch (_) { /* Audio availability does not affect measurement. */ }
+  updateCleanReadout();
+}
+
 function setMode(mode) {
+  cleanVideoReadoutReady = false;
   appMode = mode;
   document.getElementById('btnFree').classList.toggle('active', mode==='free');
   document.getElementById('btnUpdrs').classList.toggle('active', mode==='updrs');
@@ -2551,6 +2608,7 @@ function setMode(mode) {
   if(mode!=='updrs') { testState='idle'; document.getElementById('testHud').classList.remove('visible'); document.getElementById('countdown').classList.remove('visible'); }
   if(mode!=='video') { document.getElementById('videoProgressOverlay').classList.add('hidden'); }
   document.getElementById('resultsOverlay').classList.remove('visible');
+  updateCleanReadout();
 }
 
 // ═══════════════════════════════════════════
@@ -2969,6 +3027,8 @@ function finishLiveHawkIRecording() {
 }
 
 async function analyzeVideoFile(file) {
+  cleanVideoReadoutReady = false;
+  updateCleanReadout();
   const videoTestType = testType === 'gait' ? 'gait' : 'finger';
   testType = videoTestType;
   trackAnalytics('assessment_started', {
@@ -2991,6 +3051,8 @@ async function analyzeVideoFile(file) {
   if (hawkIEnabled) stageHawkIReview(file, { testType: videoTestType });
   // Reset
   Object.assign(testData,{taps:[],arrests:0,startTime:0,lastTapT:0,currentMaxDist:0});
+  cleanVideoReadoutReady = true;
+  updateCleanReadout();
   const keys = Object.keys(prevTap).filter(k=>k.startsWith('vid-'));
   keys.forEach(k=>delete prevTap[k]);
 
@@ -3062,12 +3124,18 @@ async function analyzeVideoFile(file) {
 
     // Render effects on this frame
     const W=canvas.width, H=canvas.height;
-    bgWaves = bgWaves.filter(w=>{w.update();w.draw(ctx);return !w.isDead();});
-    const flashes=[],rest=[];
-    effects.forEach(e=>(e instanceof ScreenFlash?flashes:rest).push(e));
-    rest.forEach(e=>{if(e.update)e.update();if(e.draw)e.draw(ctx);});
-    effects=[...rest.filter(e=>!e.isDead()),...flashes];
-    effects=effects.filter(e=>{if(!(e instanceof ScreenFlash))return true;e.update();e.draw(ctx,W,H);return !e.isDead();});
+    if (!cleanViewEnabled) bgWaves = bgWaves.filter(w=>{w.update();w.draw(ctx);return !w.isDead();});
+    if (!cleanViewEnabled) {
+  const flashes=[],rest=[];
+      effects.forEach(e=>(e instanceof ScreenFlash?flashes:rest).push(e));
+      rest.forEach(e=>{if(e.update)e.update();if(e.draw)e.draw(ctx);});
+      effects=[...rest.filter(e=>!e.isDead()),...flashes];
+      effects=effects.filter(e=>{if(!(e instanceof ScreenFlash))return true;e.update();e.draw(ctx,W,H);return !e.isDead();});
+  } else {
+    effects.length = 0;
+    bgWaves.length = 0;
+  }
+  updateCleanReadout();
 
     frame++;
     const pct = frame/total;
@@ -3106,10 +3174,12 @@ function detectTapsVideo(landmarks, handIdx, timestampMs) {
     const wasT=prevTap[key]||false;
     const lastMs=lastTapMs[key]||0;
     if(isTap&&!wasT&&(timestampMs-lastMs)>TAP_COOLDOWN){
-      // Effects at tap location (visible during analysis)
-      effects.push(new GlowPulse(x,y,FINGER_COLORS[fi]));
-      effects.push(new Shockwave(x,y,FINGER_COLORS[fi],0,1));
-      bgWaves.push(new BgWave(x,y,FINGER_COLORS[fi]));
+      if (!cleanViewEnabled) {
+        // Effects at tap location (visible during analysis)
+        effects.push(new GlowPulse(x,y,FINGER_COLORS[fi]));
+        effects.push(new Shockwave(x,y,FINGER_COLORS[fi],0,1));
+        bgWaves.push(new BgWave(x,y,FINGER_COLORS[fi]));
+      }
       // Record tap
       const elapsed=timestampMs-testData.lastTapT;
       if(testData.taps.length>0&&elapsed>ARREST_THRESHOLD) testData.arrests++;
@@ -3298,11 +3368,13 @@ function drawTremorScope(W, H) {
 const TOE_LIFT_THRESH = 0.045, TOE_COOLDOWN = 220;
 
 function triggerToeTap(x, y, lift) {
-  const sc=0.8+lift*5;
-  for(let i=0;i<14;i++) effects.push(new GroundRipple(x,y,'#00ff88',i*2));
-  for(let i=0;i<8;i++)  effects.push(new Particle(x,y,'#00ff88',sc*0.7));
-  effects.push(new GlowPulse(x,y,'#00ff88'), new ScreenFlash('#00ff88'));
-  bgWaves.push(new BgWave(x,y,'#00ff88'));
+  if (!cleanViewEnabled) {
+    const sc=0.8+lift*5;
+    for(let i=0;i<14;i++) effects.push(new GroundRipple(x,y,'#00ff88',i*2));
+    for(let i=0;i<8;i++)  effects.push(new Particle(x,y,'#00ff88',sc*0.7));
+    effects.push(new GlowPulse(x,y,'#00ff88'), new ScreenFlash('#00ff88'));
+    bgWaves.push(new BgWave(x,y,'#00ff88'));
+  }
   if(testState==='running'){
     const now=Date.now(), elapsed=now-testData.lastTapT;
     if(testData.taps.length>0&&elapsed>ARREST_THRESHOLD) testData.arrests++;
@@ -3314,7 +3386,7 @@ function triggerToeTap(x, y, lift) {
   combo=(Date.now()-lastTapTime<COMBO_WINDOW)?combo+1:1;
   lastTapTime=Date.now(); tapCount++;
   tapHistory.push(Date.now()); if(tapHistory.length>10)tapHistory.shift();
-  if(combo>=3) effects.push(new Lightning(x,y,'#00ff88'));
+  if(!cleanViewEnabled && combo>=3) effects.push(new Lightning(x,y,'#00ff88'));
   playTap(185,combo);
   if(appMode!=='video') updateFreeHUD();
 }
@@ -3344,11 +3416,13 @@ function detectToeTap(poseLandmarks) {
 const KNEE_LIFT_THRESH = 0.065, LEG_COOLDOWN = 260;
 
 function triggerLegLift(x, y, lift) {
-  const sc=0.8+lift*4;
-  for(let i=0;i<12;i++) effects.push(new HeightArc(x,y,'#ffee00',i*2));
-  for(let i=0;i<6;i++)  effects.push(new Particle(x,y,i%2===0?'#ffee00':'#ffcc00',sc*0.7));
-  effects.push(new Burst(x,y,'#ffee00'), new GlowPulse(x,y,'#ffee00'), new ScreenFlash('#ffee00'));
-  bgWaves.push(new BgWave(x,y,'#ffee00'));
+  if (!cleanViewEnabled) {
+    const sc=0.8+lift*4;
+    for(let i=0;i<12;i++) effects.push(new HeightArc(x,y,'#ffee00',i*2));
+    for(let i=0;i<6;i++)  effects.push(new Particle(x,y,i%2===0?'#ffee00':'#ffcc00',sc*0.7));
+    effects.push(new Burst(x,y,'#ffee00'), new GlowPulse(x,y,'#ffee00'), new ScreenFlash('#ffee00'));
+    bgWaves.push(new BgWave(x,y,'#ffee00'));
+  }
   if(testState==='running'){
     const now=Date.now(), elapsed=now-testData.lastTapT;
     if(testData.taps.length>0&&elapsed>ARREST_THRESHOLD) testData.arrests++;
@@ -3360,7 +3434,7 @@ function triggerLegLift(x, y, lift) {
   combo=(Date.now()-lastTapTime<COMBO_WINDOW)?combo+1:1;
   lastTapTime=Date.now(); tapCount++;
   tapHistory.push(Date.now()); if(tapHistory.length>10)tapHistory.shift();
-  if(combo>=3) effects.push(new Lightning(x,y,'#ffee00'));
+  if(!cleanViewEnabled && combo>=3) effects.push(new Lightning(x,y,'#ffee00'));
   playTap(150,combo);
   if(appMode!=='video') updateFreeHUD();
 }
@@ -4059,7 +4133,7 @@ function drawFaceMesh(lm) {
 function drawFingerTapCharge(landmarks, activeFingers, lx, ly) {
   // This is deliberately visual-only. The clinical tap count still uses
   // TAP_THRESH in detectTaps(), while this makes the approach to a tap legible.
-  if (testType !== 'finger' || appMode === 'video') return;
+  if (cleanViewEnabled || testType !== 'finger' || appMode === 'video') return;
 
   const thumb = landmarks[THUMB_TIP];
   const index = landmarks[FINGER_TIPS[0]];
@@ -4118,11 +4192,16 @@ function drawHand(landmarks, activeFingers, opts = {}) {
   ctx.save(); ctx.strokeStyle='rgba(255,255,255,0.18)'; ctx.lineWidth=1.5;
   CONNECTIONS.forEach(([a,b])=>{const pa=landmarks[a],pb=landmarks[b];ctx.beginPath();ctx.moveTo(lx(pa),ly(pa));ctx.lineTo(lx(pb),ly(pb));ctx.stroke();});
   ctx.restore();
-  drawFingerTapCharge(landmarks, activeFingers, lx, ly);
+  if (!cleanViewEnabled) drawFingerTapCharge(landmarks, activeFingers, lx, ly);
   landmarks.forEach((lm,i)=>{
     const x=lx(lm), y=ly(lm), fi=FINGER_TIPS.indexOf(i);
     ctx.save();
-    if(fi>=0){const hit=activeFingers[fi];ctx.shadowBlur=hit?30:9;ctx.shadowColor=FINGER_COLORS[fi];ctx.fillStyle=FINGER_COLORS[fi];ctx.beginPath();ctx.arc(x,y,hit?8:4.5,0,Math.PI*2);ctx.fill();if(hit){ctx.globalAlpha=0.35;ctx.beginPath();ctx.arc(x,y,14,0,Math.PI*2);ctx.fill();}}
+    if (cleanViewEnabled) {
+      ctx.shadowBlur=0;
+      ctx.fillStyle=fi>=0 ? FINGER_COLORS[fi] : i===THUMB_TIP ? '#fff' : 'rgba(255,255,255,0.65)';
+      ctx.beginPath();ctx.arc(x,y,fi>=0||i===THUMB_TIP?4:2.5,0,Math.PI*2);ctx.fill();
+    }
+    else if(fi>=0){const hit=activeFingers[fi];ctx.shadowBlur=hit?30:9;ctx.shadowColor=FINGER_COLORS[fi];ctx.fillStyle=FINGER_COLORS[fi];ctx.beginPath();ctx.arc(x,y,hit?8:4.5,0,Math.PI*2);ctx.fill();if(hit){ctx.globalAlpha=0.35;ctx.beginPath();ctx.arc(x,y,14,0,Math.PI*2);ctx.fill();}}
     else if(i===THUMB_TIP){ctx.shadowBlur=10;ctx.shadowColor='#fff';ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(x,y,5.5,0,Math.PI*2);ctx.fill();}
     else{ctx.fillStyle='rgba(255,255,255,0.42)';ctx.beginPath();ctx.arc(x,y,2.5,0,Math.PI*2);ctx.fill();}
     ctx.restore();
@@ -4181,8 +4260,10 @@ function frame() {
 
   const W=canvas.width, H=canvas.height;
   ctx.clearRect(0,0,W,H);
-  bgWaves=bgWaves.filter(w=>{w.update();w.draw(ctx);return !w.isDead();});
-  Object.values(trails).forEach(t=>t.draw(ctx));
+  if (!cleanViewEnabled) {
+    bgWaves=bgWaves.filter(w=>{w.update();w.draw(ctx);return !w.isDead();});
+    Object.values(trails).forEach(t=>t.draw(ctx));
+  }
 
   if(appMode!=='video') {
     if(testType==='toe'||testType==='leg'||testType==='posture'||testType==='gait') {
@@ -4191,11 +4272,11 @@ function frame() {
         else if(testType==='leg')    detectLegAgility(poseResults.poseLandmarks);
         else if(testType==='posture')detectPosture(poseResults.poseLandmarks);
         else if(testType==='gait')   detectGait(poseResults.poseLandmarks);
-        drawPoseSkeleton(poseResults.poseLandmarks);
+        if (!cleanViewEnabled) drawPoseSkeleton(poseResults.poseLandmarks);
       }
     } else if(testType==='face') {
       const fl=faceMeshResults?.multiFaceLandmarks?.[0];
-      if(fl){ detectFace(fl); drawFaceMesh(fl); }
+      if(fl){ detectFace(fl); if (!cleanViewEnabled) drawFaceMesh(fl); }
     } else if(handResults&&handResults.multiHandLandmarks){
       handResults.multiHandLandmarks.forEach((lm,hi)=>{
         let active=[false,false,false,false];
@@ -4208,16 +4289,24 @@ function frame() {
     }
   }
 
+  if (!cleanViewEnabled) {
   const flashes=[],rest=[];
-  effects.forEach(e=>(e instanceof ScreenFlash?flashes:rest).push(e));
-  rest.forEach(e=>{if(e.update)e.update();if(e.draw)e.draw(ctx);});
-  effects=[...rest.filter(e=>!e.isDead()),...flashes];
-  effects=effects.filter(e=>{if(!(e instanceof ScreenFlash))return true;e.update();e.draw(ctx,W,H);return !e.isDead();});
+    effects.forEach(e=>(e instanceof ScreenFlash?flashes:rest).push(e));
+    rest.forEach(e=>{if(e.update)e.update();if(e.draw)e.draw(ctx);});
+    effects=[...rest.filter(e=>!e.isDead()),...flashes];
+    effects=effects.filter(e=>{if(!(e instanceof ScreenFlash))return true;e.update();e.draw(ctx,W,H);return !e.isDead();});
+  } else {
+    effects.length = 0;
+    bgWaves.length = 0;
+  }
+  updateCleanReadout();
 
   updateTimerRing();
   if (graphPulse > 0) graphPulse = Math.max(0, graphPulse - 0.045);
   if (testState === 'running') {
-    if(testType==='tremor') drawTremorScope(W,H); else drawLiveGraph(W,H);
+    if (!cleanViewEnabled) {
+      if(testType==='tremor') drawTremorScope(W,H); else drawLiveGraph(W,H);
+    }
   }
 
   requestAnimationFrame(frame);
@@ -4413,6 +4502,7 @@ $('profileBadge').addEventListener('click', e => {
 });
 document.addEventListener('click', () => $('profileMenu').classList.remove('open'));
 
+$('cleanViewToggle').addEventListener('click', ()=>setCleanView(!cleanViewEnabled));
 $('btnFree').addEventListener('click',  ()=>setMode('free'));
 $('btnUpdrs').addEventListener('click', ()=>setMode('updrs'));
 $('btnVideo').addEventListener('click', ()=>setMode('video'));
