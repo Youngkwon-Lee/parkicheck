@@ -1,5 +1,7 @@
+import CoreTransferable
 import SwiftData
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @Query(sort: \TapSession.startedAt) private var sessions: [TapSession]
@@ -17,7 +19,7 @@ struct SettingsView: View {
                     }
                 }
                 Section {
-                    ShareLink(item: CSVExport.make(sessions: sessions, medications: medications),
+                    ShareLink(item: CSVFile(text: CSVExport.make(sessions: sessions, medications: medications)),
                               preview: SharePreview("ParkiCheck 기록.csv")) {
                         Label("기록 내보내기 (CSV)", systemImage: "square.and.arrow.up")
                     }
@@ -65,5 +67,19 @@ enum CSVExport {
                           text(m.name), text(m.dose), text(m.note)].joined(separator: ","))
         }
         return lines.joined(separator: "\n")
+    }
+}
+
+/// Shares the export as a real `.csv` file (not plain text), so it arrives as a spreadsheet attachment.
+struct CSVFile: Transferable {
+    let text: String
+
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(exportedContentType: .commaSeparatedText) { file in
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent("ParkiCheck-records.csv")
+            // UTF-8 BOM so spreadsheet apps (e.g. Excel) read Korean text correctly.
+            try Data(("\u{FEFF}" + file.text).utf8).write(to: url, options: .atomic)
+            return SentTransferredFile(url)
+        }
     }
 }

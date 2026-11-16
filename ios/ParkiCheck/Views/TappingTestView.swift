@@ -56,6 +56,13 @@ final class TappingRecorder: ObservableObject {
         phase = .ready
         liveTapCount = 0
     }
+
+    /// Discards a countdown or recording that was interrupted (e.g. by switching tabs),
+    /// so an incomplete recording can never be computed over the full duration and saved.
+    func cancelIfUnfinished() {
+        if case .finished = phase { return }
+        reset()
+    }
 }
 
 struct TappingTestView: View {
@@ -79,7 +86,10 @@ struct TappingTestView: View {
         .navigationTitle("\(hand.label) 탭핑 기록")
         .navigationBarTitleDisplayMode(.inline)
         .task { await tracker.start() }
-        .onDisappear { tracker.stop() }
+        .onDisappear {
+            recorder.cancelIfUnfinished()
+            tracker.stop()
+        }
     }
 
     @ViewBuilder private var cameraStage: some View {
