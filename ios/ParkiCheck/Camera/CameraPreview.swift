@@ -21,7 +21,7 @@ struct CameraPreview: UIViewRepresentable {
 
 /// Draws landmarks over an aspect-fill preview.
 struct HandOverlay: View {
-    let overlay: HandTracker.OverlayPoints?
+    let overlay: MotionTracker.Overlay?
 
     var body: some View {
         Canvas { context, size in
@@ -30,9 +30,10 @@ struct HandOverlay: View {
             let drawn = CGSize(width: overlay.imageSize.width * scale, height: overlay.imageSize.height * scale)
             let origin = CGPoint(x: (size.width - drawn.width) / 2, y: (size.height - drawn.height) / 2)
             for p in overlay.points {
-                let center = CGPoint(x: origin.x + p.x * drawn.width, y: origin.y + p.y * drawn.height)
+                // Mirror x to match the selfie-style preview.
+                let center = CGPoint(x: origin.x + (1 - p.x) * drawn.width, y: origin.y + p.y * drawn.height)
                 context.fill(Path(ellipseIn: CGRect(x: center.x - 4, y: center.y - 4, width: 8, height: 8)),
-                             with: .color(.accentColor))
+                             with: .color(CoachStyle.accent))
             }
         }
         .allowsHitTesting(false)

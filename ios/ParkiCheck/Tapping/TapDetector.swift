@@ -37,6 +37,8 @@ struct TapDetector {
     private var lastTapTime: TimeInterval = -.infinity
     private var peakOpening = 0.0
     private var handSizeRef: Double?
+    /// Most recent thumb–index opening ratio, for debugging and threshold tuning.
+    private(set) var lastRatio: Double?
 
     init(config: Config = Config()) {
         self.config = config
@@ -50,6 +52,7 @@ struct TapDetector {
         handSizeRef = reference
 
         let ratio = Self.distance(sample.thumbTip, sample.indexTip) / reference
+        lastRatio = ratio
         peakOpening = max(peakOpening, ratio)
 
         if isClosed {
