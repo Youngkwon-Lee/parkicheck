@@ -56,4 +56,11 @@ final class IntentParserTests: XCTestCase {
         XCTAssertEqual(parse("이번 주 요약 보여줘"), .weeklySummary)
         XCTAssertEqual(parse("새 약 추가할래"), .addMedication)
     }
+
+    func testQuestionsAndPlansAreNotLoggedAsIntake() {
+        for text in ["약 먹어도 돼?", "약 먹을게", "약 먹었나?", "마도파 먹었는지 모르겠어"] {
+            if case .medicationTaken = IntentParser.parse(text, medicationNames: ["마도파"]) { XCTFail(text) }
+        }
+        XCTAssertEqual(IntentParser.parse("약 먹음"), .medicationTaken(medicationHint: nil, at: nil))
+    }
 }

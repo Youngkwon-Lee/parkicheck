@@ -277,7 +277,10 @@ final class ParkiAgent: ObservableObject {
     }
 
     private func logSlot(_ slot: DoseSlot) {
-        NotificationManager.logIntake(medicationID: slot.medicationID, minute: slot.minute, in: context)
+        guard NotificationManager.logIntake(medicationID: slot.medicationID, minute: slot.minute, in: context) else {
+            append("\(slot.name) 먹었어요", Card(status: .info, title: "이미 기록되어 있어요.", lines: ["\(slot.minute.clockLabel) \(slot.name)"]))
+            return
+        }
         var lines = ["\(slot.minute.clockLabel) \(slot.name)"]
         if let next = DoseSchedule.next(in: slots()) { lines.append("다음 약은 \(next.minute.clockLabel) \(next.name)이에요.") }
         append("\(slot.name) 먹었어요", Card(status: .done, title: "복약을 기록했어요.", lines: lines))

@@ -125,12 +125,28 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
-    /// Logs an intake for a scheduled dose. Shared by the notification action and the in-app button.
-    static func logIntake(medicationID: UUID?, minute: Int?, at date: Date = Date(), in context: ModelContext) {
-        guard let medicationID else { return }
+    /// Logs an intake for a scheduled dose. Shared by the notification action, the in-app cards and chat.
+    /// Idempotent per medication, scheduled minute and day: returns false when that dose was already logged.
+    @discardableResult
+    static func logIntake(medicationID: UUID?, minute: Int?, at date: Date = Date(), in context: ModelContext) -> Bool {
+        guard let medicationID else { return false }
         let descriptor = FetchDescriptor<Medication>(predicate: #Predicate { $0.id == medicationID })
-        guard let med = try? context.fetch(descriptor).first else { return }
+        guard let med = try? context.fetch(descriptor).first else { return false }
+        if let minute, isLogged(medicationID: medicationID, minute: minute, on: date, in: context) { return false }
         context.insert(MedicationEntry(takenAt: date, name: med.name, dose: med.dose, medicationID: med.id, scheduledMinute: minute))
         try? context.save()
+        return true
+    }
+
+    static func isLogged(medicationID: UUID, minute: Int, on date: Date, in context: ModelContext) -> Bool {
+        let cal = Calendar.current
+        let start = cal.startOfDay(for: date)
+        guard let end = cal.date(byAdding: .day, value: 1, to: start) else { return false }
+        let id: UUID? = medicationID
+        let descriptor = FetchDescriptor<MedicationEntry>(predicate: #Predicate {
+            $0.medicationID == id && $0.takenAt >= start && $0.takenAt < end
+        })
+        let entries = (try? context.fetch(descriptor)) ?? []
+        return entries.contains { $0.scheduledMinute == minute }
     }
 }

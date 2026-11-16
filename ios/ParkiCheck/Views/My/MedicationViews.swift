@@ -155,7 +155,12 @@ struct MedicationEditorView: View {
         try? context.save()
         Task {
             if await NotificationManager.shared.authorizationStatus() == .notDetermined {
-                await NotificationManager.shared.requestAuthorization()
+                // RootView's reschedule can run while the prompt is still open and skip,
+                // so schedule again once the patient has answered.
+                if await NotificationManager.shared.requestAuthorization() {
+                    let meds = (try? context.fetch(FetchDescriptor<Medication>())) ?? []
+                    await NotificationManager.shared.reschedule(meds)
+                }
             }
         }
         dismiss()

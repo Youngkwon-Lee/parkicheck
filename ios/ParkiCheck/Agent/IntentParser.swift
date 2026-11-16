@@ -49,7 +49,8 @@ enum IntentParser {
 
         let mentionsMedication = has(["약", "먹었", "복용"]) || medicationNames.contains { !$0.isEmpty && text.contains($0) }
         if mentionsMedication, has(negations) { return .medicationNotTaken }
-        if has(["먹었", "복용했", "약 먹", "먹음", "챙겨 먹", "삼켰"]) {
+        // Only a completed intake is logged. "약 먹어도 돼?", "약 먹을게", "약 먹었나?" are not.
+        if has(["먹었", "복용했", "먹음", "삼켰"]), !isQuestion(text) {
             let hint = medicationNames.first { !$0.isEmpty && text.contains($0) }
             return .medicationTaken(medicationHint: hint, at: parseTime(text, now: now, calendar: calendar))
         }
@@ -71,6 +72,10 @@ enum IntentParser {
         if !tags.isEmpty { return .symptom(tags: tags, note: text) }
         if has(goodWords) { return .state(.good, note: text) }
         return .note(text)
+    }
+
+    static func isQuestion(_ text: String) -> Bool {
+        text.contains("?") || ["먹었나", "먹었는지", "먹었던가", "먹었을까", "먹었어야"].contains { text.replacingOccurrences(of: " ", with: "").contains($0) }
     }
 
     /// Understands "2시에", "오후 2시 반", "14시 30분", "30분 전", "1시간 전", "아까" (= now).
