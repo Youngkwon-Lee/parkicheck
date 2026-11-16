@@ -2,9 +2,9 @@ import XCTest
 @testable import ParkiCheck
 
 @MainActor
-final class TappingRecorderTests: XCTestCase {
+final class TaskRecorderTests: XCTestCase {
     func testLeavingDuringCountdownDiscardsTheRecording() async throws {
-        let recorder = TappingRecorder()
+        let recorder = TaskRecorder(kind: .fingerTapping, side: .right)
         recorder.begin()
         try await Task.sleep(for: .milliseconds(100))
         XCTAssertEqual(recorder.phase, .countdown(3))
