@@ -88,9 +88,9 @@ struct RecordsView: View {
                         }
                     }
                 }
-                .chartForegroundStyleScale([PatientState.good.shortLabel: CoachStyle.ok,
-                                            PatientState.off.shortLabel: CoachStyle.warn,
-                                            PatientState.dyskinesia.shortLabel: CoachStyle.accent])
+                .chartForegroundStyleScale([PatientState.good.shortLabel: CoachStyle.tint(for: .good),
+                                            PatientState.off.shortLabel: CoachStyle.tint(for: .off),
+                                            PatientState.dyskinesia.shortLabel: CoachStyle.tint(for: .dyskinesia)])
                 .chartXAxis { AxisMarks { AxisValueLabel().font(.subheadline).foregroundStyle(CoachStyle.quiet) } }
                 .chartYAxis { AxisMarks { AxisGridLine().foregroundStyle(CoachStyle.stroke); AxisValueLabel().foregroundStyle(CoachStyle.quiet) } }
                 .frame(height: 200)

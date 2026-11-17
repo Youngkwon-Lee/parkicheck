@@ -41,8 +41,22 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
         ])
     }
 
-    func authorizationStatus() async -> UNAuthorizationStatus {
-        await center.notificationSettings().authorizationStatus
+    /// Current permission. The async settings call was seen never returning (simulator), which
+    /// blocked the home greeting, so this uses the callback API and gives up after `timeout`.
+    /// `timeout: nil` waits for the real answer; use it wherever a wrong answer has side effects.
+    func authorizationStatus(timeout: TimeInterval? = 2) async -> UNAuthorizationStatus {
+        let center = self.center
+        return await withCheckedContinuation { continuation in
+            let gate = OnceGate()
+            center.getNotificationSettings { settings in
+                if gate.claim() { continuation.resume(returning: settings.authorizationStatus) }
+            }
+            if let timeout {
+                DispatchQueue.main.asyncAfter(deadline: .now() + timeout) {
+                    if gate.claim() { continuation.resume(returning: .notDetermined) }
+                }
+            }
+        }
     }
 
     @discardableResult
@@ -52,11 +66,13 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
 
     /// Replaces all medication reminders with ones matching the active schedule.
     func reschedule(_ medications: [Medication]) async {
+        // Wait for the real status (no timeout) so a slow lookup never wipes working reminders.
+        let authorized = await authorizationStatus(timeout: nil) == .authorized
         let pending = await center.pendingNotificationRequests().map(\.identifier)
         center.removePendingNotificationRequests(withIdentifiers: pending.filter {
             $0.hasPrefix(ID.dosePrefix) || $0.hasPrefix(ID.checkPrefix)
         })
-        guard await authorizationStatus() == .authorized else { return }
+        guard authorized else { return }
 
         for med in medications where med.isActive {
             for minute in med.minutesOfDay {
@@ -148,5 +164,17 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
         })
         let entries = (try? context.fetch(descriptor)) ?? []
         return entries.contains { $0.scheduledMinute == minute }
+    }
+}
+
+/// Lets exactly one of several racing callbacks resume a continuation.
+private final class OnceGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var done = false
+    func claim() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        if done { return false }
+        done = true
+        return true
     }
 }

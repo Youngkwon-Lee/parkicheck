@@ -7,6 +7,9 @@ struct ParkiCheckApp: App {
 
     init() {
         NotificationManager.shared.configure(container: container)
+        #if DEBUG
+        DemoData.seedIfRequested(container)
+        #endif
     }
 
     var body: some Scene {
