@@ -125,8 +125,7 @@ struct MyView: View {
 }
 
 enum AppConfig {
-    /// Required before App Store submission. Set to the published policy URL.
-    static let privacyPolicyURL: URL? = nil
+    static let privacyPolicyURL: URL? = URL(string: "https://finger-tap-fx.vercel.app/ios/privacy.html")
 }
 
 enum CSVExport {

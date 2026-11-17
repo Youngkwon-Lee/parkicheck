@@ -41,8 +41,19 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
         ])
     }
 
-    func authorizationStatus() async -> UNAuthorizationStatus {
-        await center.notificationSettings().authorizationStatus
+    /// Current permission. The async settings call was seen never returning (simulator), which
+    /// blocked the home greeting, so this uses the callback API and gives up after `timeout`.
+    func authorizationStatus(timeout: TimeInterval = 2) async -> UNAuthorizationStatus {
+        let center = self.center
+        return await withCheckedContinuation { continuation in
+            let gate = OnceGate()
+            center.getNotificationSettings { settings in
+                if gate.claim() { continuation.resume(returning: settings.authorizationStatus) }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + timeout) {
+                if gate.claim() { continuation.resume(returning: .notDetermined) }
+            }
+        }
     }
 
     @discardableResult
@@ -148,5 +159,17 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
         })
         let entries = (try? context.fetch(descriptor)) ?? []
         return entries.contains { $0.scheduledMinute == minute }
+    }
+}
+
+/// Lets exactly one of several racing callbacks resume a continuation.
+private final class OnceGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var done = false
+    func claim() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        if done { return false }
+        done = true
+        return true
     }
 }
