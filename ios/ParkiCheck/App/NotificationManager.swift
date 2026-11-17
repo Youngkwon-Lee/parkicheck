@@ -43,15 +43,18 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
 
     /// Current permission. The async settings call was seen never returning (simulator), which
     /// blocked the home greeting, so this uses the callback API and gives up after `timeout`.
-    func authorizationStatus(timeout: TimeInterval = 2) async -> UNAuthorizationStatus {
+    /// `timeout: nil` waits for the real answer; use it wherever a wrong answer has side effects.
+    func authorizationStatus(timeout: TimeInterval? = 2) async -> UNAuthorizationStatus {
         let center = self.center
         return await withCheckedContinuation { continuation in
             let gate = OnceGate()
             center.getNotificationSettings { settings in
                 if gate.claim() { continuation.resume(returning: settings.authorizationStatus) }
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + timeout) {
-                if gate.claim() { continuation.resume(returning: .notDetermined) }
+            if let timeout {
+                DispatchQueue.main.asyncAfter(deadline: .now() + timeout) {
+                    if gate.claim() { continuation.resume(returning: .notDetermined) }
+                }
             }
         }
     }
@@ -63,11 +66,13 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
 
     /// Replaces all medication reminders with ones matching the active schedule.
     func reschedule(_ medications: [Medication]) async {
+        // Wait for the real status (no timeout) so a slow lookup never wipes working reminders.
+        let authorized = await authorizationStatus(timeout: nil) == .authorized
         let pending = await center.pendingNotificationRequests().map(\.identifier)
         center.removePendingNotificationRequests(withIdentifiers: pending.filter {
             $0.hasPrefix(ID.dosePrefix) || $0.hasPrefix(ID.checkPrefix)
         })
-        guard await authorizationStatus() == .authorized else { return }
+        guard authorized else { return }
 
         for med in medications where med.isActive {
             for minute in med.minutesOfDay {
