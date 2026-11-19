@@ -82,7 +82,13 @@ struct RootView: View {
                 }
             }
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) { FloatingTabBar(selection: $router.tab) }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            // A pushed check (camera task or daily flow) owns the whole screen;
+            // the floating bar would cover its start button.
+            if !(router.tab == .checks && !router.checksPath.isEmpty) {
+                FloatingTabBar(selection: $router.tab)
+            }
+        }
         .environmentObject(router)
         .fullScreenCover(isPresented: .constant(acceptedNoticeVersion < Self.noticeVersion)) {
             NoticeView { acceptedNoticeVersion = Self.noticeVersion }
